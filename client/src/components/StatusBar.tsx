@@ -1,0 +1,44 @@
+import { useEffect, useState } from 'react';
+import { apiGet } from '../api';
+import { useStore } from '../state/store';
+
+export function StatusBar() {
+  const workspace = useStore(s => s.workspace);
+  const settings = useStore(s => s.settings);
+  const activePath = useStore(s => s.activePath);
+  const set = useStore(s => s.set);
+  const updateSettings = useStore(s => s.updateSettings);
+  const [branch, setBranch] = useState('');
+
+  useEffect(() => {
+    void apiGet<{ isRepo: boolean; branch?: string }>('/api/git/status')
+      .then(s => setBranch(s.isRepo ? s.branch ?? '' : ''))
+      .catch(() => setBranch(''));
+  }, [workspace]);
+
+  const provider = settings?.providers.find(p => p.id === settings.activeProvider);
+
+  return (
+    <div className="status-bar">
+      <span title={workspace}>📂 {workspace.split(/[\\/]/).pop()}</span>
+      {branch && <span>⎇ {branch}</span>}
+      <span className="grow" />
+      {activePath && <span>{activePath}</span>}
+      <button
+        title="Beginner mode: plain-language explanations for non-programmers"
+        onClick={() => void updateSettings({ beginnerMode: !settings?.beginnerMode })}
+      >
+        {settings?.beginnerMode ? '🎓 Beginner mode ON' : '🎓 Beginner mode off'}
+      </button>
+      <button title="Active AI model — click to change in Settings" onClick={() => set('settingsOpen', true)}>
+        ✦ {provider ? `${provider.id} · ${provider.model}` : 'no model'}
+      </button>
+      <button
+        title="Toggle theme"
+        onClick={() => void updateSettings({ theme: settings?.theme === 'light' ? 'dark' : 'light' })}
+      >
+        {settings?.theme === 'light' ? '☀' : '☾'}
+      </button>
+    </div>
+  );
+}

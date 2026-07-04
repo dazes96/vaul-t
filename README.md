@@ -1,1 +1,94 @@
-# vaul-t
+# 💎 Emerald Code Studio
+
+A **fully open-source, local-first AI coding IDE**. Think Cursor, but it runs
+entirely on your own computer, costs nothing, phones home to no one, and every
+line of it belongs to you.
+
+- **No subscription. No premium tier. No feature gates. No usage caps.**
+- **No account. No telemetry. No cloud lock-in.**
+- Works completely **offline** with local models (Ollama, LM Studio, llama.cpp, vLLM)
+- Optional support for OpenRouter / OpenAI / Anthropic / Gemini-compatible APIs — never required
+- MIT licensed: use it, change it, sell it, fork it — forever
+
+## What you get
+
+| Area | Features |
+|---|---|
+| **Editor** | Monaco (the VS Code editor engine), tabs, themes (dark/light), search & replace across files, markdown preview, image viewer, JSON viewer, command palette (Ctrl+P) |
+| **AI Chat** | Chat with your whole codebase — relevant files are selected and included automatically. Modes: Chat, Explain (beginner-friendly), Review, Docs |
+| **AI Agent** | Multi-step tasks: plans, reads files, edits multiple files, runs commands, detects failures and fixes them. Every write shows a **diff you approve or reject**; every change is **undoable** from Change History |
+| **Autocomplete** | Inline AI completions as you type, powered by whatever model you choose |
+| **Terminal** | Real integrated shell (bottom panel) |
+| **Git** | Status, stage, commit, diff, log, reset — via your system git |
+| **Project intelligence** | Automatic detection of frameworks (React, Next.js, Vue, Laravel, WordPress themes & plugins, Tailwind, Docker…), languages, package manager; generates a project map the AI uses as memory |
+| **Beginner mode** | One toggle and the AI explains everything in plain language, assumes zero programming knowledge, and describes each change before making it |
+| **Extensibility** | Plugin system (server routes, commands, new AI provider kinds), documented architecture, clear extension APIs |
+
+## Quick start
+
+Requires [Node.js 18+](https://nodejs.org) and git.
+
+```bash
+git clone <this-repo>
+cd emerald-code-studio
+npm install
+npm run build
+npm start -- /path/to/your/project
+```
+
+Open **http://127.0.0.1:4620** in your browser. That's it — no sign-up, no key.
+
+To use a local model, install [Ollama](https://ollama.com) and pull a coding model:
+
+```bash
+ollama pull qwen2.5-coder:7b
+```
+
+Emerald talks to Ollama at `http://localhost:11434` out of the box. Pick a
+different provider or model anytime from **Settings (Ctrl+,)** — switching is
+instant.
+
+### Development mode (hot reload)
+
+```bash
+npm run dev
+```
+
+Then open http://127.0.0.1:4621 (Vite dev server; the API runs on 4620).
+
+## Keyboard shortcuts
+
+| Keys | Action |
+|---|---|
+| `Ctrl+S` | Save file |
+| `Ctrl+P` | Quick open file / `>` for commands |
+| `Ctrl+L` | Toggle AI panel |
+| `Ctrl+J` | Toggle terminal panel |
+| `Ctrl+,` | Settings |
+
+## Documentation
+
+- [Installation guide](docs/INSTALL.md)
+- [Architecture](docs/ARCHITECTURE.md) — diagrams and how it all fits together
+- [Build instructions](docs/BUILD.md)
+- [Plugin & extension API](docs/PLUGINS.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Security & privacy](docs/SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
+- [Example plugins](examples/plugins/) · [Example agent tasks](examples/agents/)
+
+## Philosophy
+
+This project will never contain a licensing system, premium tier,
+subscription, feature lock, activation step, remote authentication, artificial
+usage limit, or proprietary dependency. Any limit you find (like the agent's
+default step cap) is a **setting you can change**, not a restriction. If a
+contribution introduces any of the above, it gets rejected.
+
+The server binds to `127.0.0.1` only. The only network calls it ever makes are
+to the AI endpoints **you** configure. No telemetry exists in the codebase —
+not off-by-default, just absent.
+
+## License
+
+[MIT](LICENSE). You own every line.

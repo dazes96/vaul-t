@@ -1,0 +1,54 @@
+import { useEffect } from 'react';
+import { useStore } from './state/store';
+import { ActivityBar } from './components/ActivityBar';
+import { SidePanel } from './components/SidePanel';
+import { TabBar } from './components/TabBar';
+import { EditorArea } from './components/EditorArea';
+import { BottomPanel } from './components/BottomPanel';
+import { AIPanel } from './components/AIPanel';
+import { StatusBar } from './components/StatusBar';
+import { CommandPalette } from './components/CommandPalette';
+import { SettingsModal } from './components/SettingsModal';
+
+export function App() {
+  const init = useStore(s => s.init);
+  const saveActive = useStore(s => s.saveActive);
+  const set = useStore(s => s.set);
+  const paletteOpen = useStore(s => s.paletteOpen);
+  const settingsOpen = useStore(s => s.settingsOpen);
+  const bottomVisible = useStore(s => s.bottomVisible);
+  const aiVisible = useStore(s => s.aiVisible);
+
+  useEffect(() => { void init(); }, [init]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key === 's') { e.preventDefault(); void saveActive(); }
+      else if (mod && e.key === 'p') { e.preventDefault(); set('paletteOpen', true); }
+      else if (mod && e.key === 'j') { e.preventDefault(); set('bottomVisible', !useStore.getState().bottomVisible); }
+      else if (mod && e.key === 'l') { e.preventDefault(); set('aiVisible', !useStore.getState().aiVisible); }
+      else if (mod && e.key === ',') { e.preventDefault(); set('settingsOpen', true); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [saveActive, set]);
+
+  return (
+    <div className="app">
+      <div className="app-main">
+        <ActivityBar />
+        <SidePanel />
+        <div className="center">
+          <TabBar />
+          <EditorArea />
+          {bottomVisible && <BottomPanel />}
+        </div>
+        {aiVisible && <AIPanel />}
+      </div>
+      <StatusBar />
+      {paletteOpen && <CommandPalette />}
+      {settingsOpen && <SettingsModal />}
+    </div>
+  );
+}
