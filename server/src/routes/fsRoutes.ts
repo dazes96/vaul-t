@@ -2,6 +2,7 @@ import { Router } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { safeJoin, isIgnoredDir } from '../util/paths.js';
+import { writeFileAtomic } from '../util/atomic.js';
 import { snapshotBeforeChange } from '../agent/tools.js';
 
 /** File system API. Every path is workspace-relative and jailed by safeJoin. */
@@ -38,8 +39,7 @@ export function fsRoutes(getWorkspace: () => string): Router {
     const { path: rel, content } = req.body as { path: string; content: string };
     const abs = safeJoin(getWorkspace(), rel);
     snapshotBeforeChange(getWorkspace(), rel, 'write');
-    fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, content);
+    writeFileAtomic(abs, content);
     res.json({ ok: true });
   });
 

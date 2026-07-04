@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { dataDir } from './util/paths.js';
+import { writeFileAtomic } from './util/atomic.js';
 
 export interface ProviderConfig {
   id: string;            // user-chosen name, e.g. "ollama-local"
@@ -63,7 +64,7 @@ export function loadSettings(): Settings {
 
 export function saveSettings(s: Settings): void {
   ensureDataDir();
-  fs.writeFileSync(settingsPath(), JSON.stringify(s, null, 2));
+  writeFileAtomic(settingsPath(), JSON.stringify(s, null, 2));
 }
 
 // --- Encrypted secrets (API keys) ------------------------------------------
@@ -77,7 +78,7 @@ function getKey(): Buffer {
     return fs.readFileSync(keyPath());
   } catch {
     const key = crypto.randomBytes(32);
-    fs.writeFileSync(keyPath(), key, { mode: 0o600 });
+    writeFileAtomic(keyPath(), key, 0o600);
     return key;
   }
 }
@@ -102,7 +103,7 @@ function writeSecrets(map: SecretMap): void {
   const iv = crypto.randomBytes(12);
   const c = crypto.createCipheriv('aes-256-gcm', getKey(), iv);
   const enc = Buffer.concat([c.update(JSON.stringify(map), 'utf8'), c.final()]);
-  fs.writeFileSync(secretsPath(), Buffer.concat([iv, c.getAuthTag(), enc]), { mode: 0o600 });
+  writeFileAtomic(secretsPath(), Buffer.concat([iv, c.getAuthTag(), enc]), 0o600);
 }
 
 export function setSecret(name: string, value: string): void {

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { safeJoin, isIgnoredDir, dataDir } from '../util/paths.js';
+import { writeFileAtomic } from '../util/atomic.js';
 import { isTextFile } from '../intelligence/indexer.js';
 import type { AgentAction } from './protocol.js';
 
@@ -45,7 +46,10 @@ function recordHistory(entry: HistoryEntry): void {
   const all = readHistory();
   all.push(entry);
   fs.mkdirSync(dataDir(), { recursive: true });
-  fs.writeFileSync(historyFile(), JSON.stringify(all.slice(-500), null, 2));
+  // snapshotBeforeChange runs fully synchronously, so concurrent agent tool
+  // calls cannot interleave this read-modify-write; atomic write protects the
+  // log from corruption if the process dies mid-write.
+  writeFileAtomic(historyFile(), JSON.stringify(all.slice(-500), null, 2));
 }
 
 export function snapshotBeforeChange(workspace: string, relPath: string, kind: 'write' | 'delete'): HistoryEntry {
@@ -68,8 +72,7 @@ export function rollback(entryId: string): { ok: boolean; message: string } {
     try { fs.unlinkSync(abs); } catch { /* already gone */ }
     return { ok: true, message: `Removed ${entry.path} (it did not exist before the change)` };
   }
-  fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, entry.previousContent);
+  writeFileAtomic(abs, entry.previousContent);
   return { ok: true, message: `Restored ${entry.path}` };
 }
 
@@ -98,8 +101,7 @@ export async function executeTool(workspace: string, action: AgentAction): Promi
         const abs = safeJoin(workspace, rel);
         const old = fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : undefined;
         snapshotBeforeChange(workspace, rel, 'write');
-        fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, String(action.content ?? ''));
+        writeFileAtomic(abs, String(action.content ?? ''));
         return { ok: true, output: `Wrote ${rel} (${String(action.content ?? '').length} bytes)`, oldContent: old };
       }
       case 'delete_file': {

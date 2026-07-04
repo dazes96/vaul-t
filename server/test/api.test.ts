@@ -55,6 +55,20 @@ describe('file system API', () => {
     const res = await request(await app()).get('/api/fs/read').query({ path: '../../etc/passwd' });
     expect(res.status).toBe(500);
   });
+
+  it('blocks cross-origin browser requests but allows loopback', async () => {
+    const a = await app();
+    const blocked = await request(a).post('/api/fs/write')
+      .set('Origin', 'https://evil.example')
+      .send({ path: 'hacked.txt', content: 'pwned' });
+    expect(blocked.status).toBe(403);
+    expect(fs.existsSync(path.join(ws, 'hacked.txt'))).toBe(false);
+
+    const allowed = await request(a).post('/api/fs/write')
+      .set('Origin', 'http://localhost:4621')
+      .send({ path: 'ok.txt', content: 'fine' });
+    expect(allowed.status).toBe(200);
+  });
 });
 
 describe('search API', () => {

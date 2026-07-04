@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import fs from 'node:fs';
 import { safeJoin } from '../util/paths.js';
+import { writeFileAtomic } from '../util/atomic.js';
 import { searchWorkspace } from '../agent/tools.js';
 
 export function searchRoutes(getWorkspace: () => string): Router {
@@ -25,7 +26,7 @@ export function searchRoutes(getWorkspace: () => string): Router {
       const abs = safeJoin(getWorkspace(), rel);
       const before = fs.readFileSync(abs, 'utf8');
       const after = before.split(find).join(replace);
-      if (after !== before) { fs.writeFileSync(abs, after); changed++; }
+      if (after !== before) { writeFileAtomic(abs, after); changed++; }
     }
     res.json({ ok: true, changed });
   });

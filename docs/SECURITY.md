@@ -18,6 +18,19 @@ can reach your IDE or your files. If you change `EMERALD_HOST`, you are
 exposing a tool that can read and write files and run commands as your user —
 put a real authentication layer in front of it first.
 
+### Cross-origin / CSRF protection
+
+Binding to localhost is not enough on its own: a web page you visit in a
+browser can still make requests to `http://127.0.0.1:4620` and try to open the
+terminal WebSocket. Emerald blocks this. Every HTTP request and every
+WebSocket upgrade is checked against `isAllowedOrigin()`
+(`server/src/util/origin.ts`): browser requests are only accepted when their
+`Origin` is a loopback address, so a page on `https://evil.example` is
+rejected with `403` before it can touch any endpoint. Requests with no
+`Origin` header (curl, editors, local scripts) are allowed, so local
+automation keeps working. Covered by tests in `server/test/security.test.ts`
+and verified end-to-end against a running server.
+
 ## Data at rest
 
 | Data | Location | Protection |
@@ -49,7 +62,21 @@ be rolled back from the Change History panel.
 
 All file APIs resolve paths through `safeJoin()` (`server/src/util/paths.ts`),
 which rejects any path that resolves outside the current workspace — including
-`../` traversal and absolute paths. Covered by tests (`server/test/paths.test.ts`).
+`../` traversal, absolute paths, and **symlinks that point outside the
+workspace**. The jail resolves the real (symlink-followed) location of the
+nearest existing ancestor before checking containment, so a symlink inside the
+repo aimed at `/etc` cannot be used to escape. There is an inherent TOCTOU
+window (a symlink swapped between check and use) that is acceptable for a
+single-user local tool. Covered by tests in `server/test/paths.test.ts` and
+`server/test/security.test.ts`.
+
+### Crash-safe writes
+
+Every file write — your source files, the encrypted secret store, settings,
+and the undo-history log — goes through `writeFileAtomic()`
+(`server/src/util/atomic.ts`): it writes a temp file and atomically renames it
+over the target. A crash or power loss mid-write leaves either the old
+contents or the new ones, never a half-written or corrupted file.
 
 ## Prompt-injection awareness
 
