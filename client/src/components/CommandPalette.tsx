@@ -37,6 +37,10 @@ export function CommandPalette() {
     { label: '> Open settings', run: () => set('settingsOpen', true) },
     { label: '> Toggle terminal panel', run: () => set('bottomVisible', !useStore.getState().bottomVisible) },
     { label: '> Toggle AI panel', run: () => set('aiVisible', !useStore.getState().aiVisible) },
+    { label: '> Run verification (typecheck/lint/test/build)', run: () => { set('bottomVisible', true); set('bottomTab', 'verify'); } },
+    { label: '> Open Tasks panel', run: () => { set('bottomVisible', true); set('bottomTab', 'tasks'); } },
+    { label: '> Open Change History / Checkpoints', run: () => set('sidePanel', 'history') },
+    { label: '> Toggle auto-verify after agent edits', run: () => void updateSettings({ autoVerify: !settings?.autoVerify }) },
   ], [settings, set, updateSettings]);
 
   const items: Item[] = useMemo(() => {

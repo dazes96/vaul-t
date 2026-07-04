@@ -4,6 +4,12 @@ import path from 'node:path';
 import { safeJoin, isIgnoredDir } from '../util/paths.js';
 import { writeFileAtomic } from '../util/atomic.js';
 import { snapshotBeforeChange } from '../agent/tools.js';
+import { getProjectIndex } from '../intelligence/manager.js';
+
+/** Best-effort recency signal for retrieval — never blocks or fails the request. */
+function touch(workspace: string, relPath: string): void {
+  void getProjectIndex(workspace).then(idx => idx.touch(relPath)).catch(() => { /* index not ready yet */ });
+}
 
 /** File system API. Every path is workspace-relative and jailed by safeJoin. */
 export function fsRoutes(getWorkspace: () => string): Router {
@@ -25,8 +31,10 @@ export function fsRoutes(getWorkspace: () => string): Router {
   });
 
   r.get('/read', (req, res) => {
-    const abs = safeJoin(getWorkspace(), String(req.query.path));
+    const rel = String(req.query.path);
+    const abs = safeJoin(getWorkspace(), rel);
     const buf = fs.readFileSync(abs);
+    touch(getWorkspace(), rel);
     const ext = path.extname(abs).toLowerCase();
     if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp'].includes(ext)) {
       res.json({ kind: 'image', base64: buf.toString('base64'), ext });
@@ -40,6 +48,7 @@ export function fsRoutes(getWorkspace: () => string): Router {
     const abs = safeJoin(getWorkspace(), rel);
     snapshotBeforeChange(getWorkspace(), rel, 'write');
     writeFileAtomic(abs, content);
+    touch(getWorkspace(), rel);
     res.json({ ok: true });
   });
 

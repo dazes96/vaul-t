@@ -33,4 +33,32 @@ describe('agent action protocol', () => {
     const { actions } = parseActions('```action\n' + content + '\n```');
     expect(actions[0].content).toBe('line1\nline2');
   });
+
+  it('extracts a plan block separately from narration and actions', () => {
+    const text = [
+      'I will fix the bug.',
+      '```plan',
+      '1. Read the file',
+      '2. Fix the null check',
+      '```',
+      '```action',
+      '{"tool":"read_file","path":"src/a.ts"}',
+      '```',
+    ].join('\n');
+    const { plan, narration, actions } = parseActions(text);
+    expect(plan).toBe('1. Read the file\n2. Fix the null check');
+    expect(narration).toBe('I will fix the bug.');
+    expect(actions).toHaveLength(1);
+  });
+
+  it('returns plan: null when there is no plan block', () => {
+    const { plan } = parseActions('```action\n{"tool":"list_dir","path":"."}\n```');
+    expect(plan).toBeNull();
+  });
+
+  it('handles a plan block with no actions (pure planning turn)', () => {
+    const { plan, actions } = parseActions('```plan\n1. First I will look around\n```');
+    expect(plan).toBe('1. First I will look around');
+    expect(actions).toHaveLength(0);
+  });
 });

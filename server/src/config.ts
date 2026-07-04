@@ -19,6 +19,8 @@ export interface Settings {
   beginnerMode: boolean;
   autocomplete: boolean;
   agentMaxSteps: number;         // user-adjustable, not a hard product limit
+  autoVerify: boolean;           // run typecheck/lint/test/build after an agent run
+  autoHealAttempts: number;     // how many fix-and-recheck rounds the agent gets on verify failure
   recentWorkspaces: string[];
   approvals: {
     fileDelete: boolean;
@@ -40,6 +42,8 @@ export const DEFAULT_SETTINGS: Settings = {
   beginnerMode: false,
   autocomplete: true,
   agentMaxSteps: 50,
+  autoVerify: true,
+  autoHealAttempts: 2,
   recentWorkspaces: [],
   approvals: { fileDelete: true, terminalExec: true, gitReset: true, dependencyInstall: true },
 };

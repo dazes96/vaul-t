@@ -16,11 +16,14 @@ export interface Settings {
   beginnerMode: boolean;
   autocomplete: boolean;
   agentMaxSteps: number;
+  autoVerify: boolean;
+  autoHealAttempts: number;
   approvals: { fileDelete: boolean; terminalExec: boolean; gitReset: boolean; dependencyInstall: boolean };
 }
 
 export type SidePanel = 'explorer' | 'search' | 'git' | 'history';
-export type BottomTab = 'terminal' | 'output' | 'problems';
+export type BottomTab = 'terminal' | 'output' | 'problems' | 'verify' | 'tasks';
+export type VerifyStatus = 'idle' | 'running' | 'pass' | 'fail';
 
 interface AppState {
   workspace: string;
@@ -35,6 +38,8 @@ interface AppState {
   settingsOpen: boolean;
   output: string[];
   treeVersion: number;   // bump to make the explorer refresh
+  verifyStatus: VerifyStatus;
+  runningTaskCount: number;
 
   init(): Promise<void>;
   openFile(path: string): Promise<void>;
@@ -61,6 +66,8 @@ export const useStore = create<AppState>((set, get) => ({
   settingsOpen: false,
   output: [],
   treeVersion: 0,
+  verifyStatus: 'idle',
+  runningTaskCount: 0,
 
   async init() {
     const [ws, s] = await Promise.all([

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { loadSettings, saveSettings, setSecret, listSecretNames, type Settings } from '../config.js';
-import { readHistory, rollback } from '../agent/tools.js';
+import { readHistory, rollback, listCheckpoints, rollbackCheckpoint } from '../agent/tools.js';
 
 export function settingsRoutes(): Router {
   const r = Router();
@@ -38,6 +38,17 @@ export function settingsRoutes(): Router {
   r.post('/rollback', (req, res) => {
     const { id } = req.body as { id: string };
     res.json(rollback(id));
+  });
+
+  // --- Checkpoints (one agent run, restorable as a group) ---
+  r.get('/checkpoints', (req, res) => {
+    const workspace = String(req.query.workspace ?? '');
+    res.json(listCheckpoints(workspace || undefined));
+  });
+
+  r.post('/checkpoints/rollback', (req, res) => {
+    const { runId } = req.body as { runId: string };
+    res.json(rollbackCheckpoint(runId));
   });
 
   return r;

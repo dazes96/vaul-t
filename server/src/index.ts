@@ -12,11 +12,14 @@ import { indexRoutes } from './routes/indexRoute.js';
 import { aiRoutes } from './routes/aiRoutes.js';
 import { conversationRoutes } from './routes/conversationRoutes.js';
 import { settingsRoutes } from './routes/settingsRoutes.js';
+import { verifyRoutes } from './routes/verifyRoutes.js';
+import { taskRoutes } from './routes/taskRoutes.js';
 import { handleTerminalSocket } from './terminal.js';
 import { handleAgentSocket } from './agent/agent.js';
 import { loadPlugins, type LoadedPlugin } from './plugins.js';
 import { isAllowedOrigin } from './util/origin.js';
 import { closeAllIndexes } from './intelligence/manager.js';
+import { killAllTasks } from './tasks.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.EMERALD_PORT || 4620);
@@ -49,6 +52,8 @@ export function createApp(): express.Express {
   app.use('/api/ai', aiRoutes(getWorkspace));
   app.use('/api/conversations', conversationRoutes());
   app.use('/api/settings', settingsRoutes());
+  app.use('/api/verify', verifyRoutes(getWorkspace));
+  app.use('/api/tasks', taskRoutes(getWorkspace));
 
   app.get('/api/workspace', (_req, res) => {
     res.json({ workspace, recent: loadSettings().recentWorkspaces });
@@ -122,6 +127,7 @@ async function main() {
     for (const client of wss.clients) client.close();
     wss.close();
     void closeAllIndexes();
+    killAllTasks();
     server.close(() => process.exit(0));
     // Drop lingering HTTP keep-alive sockets so close() returns promptly
     // instead of waiting for idle connections to time out.

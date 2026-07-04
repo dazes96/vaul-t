@@ -10,6 +10,8 @@ export function SettingsModal() {
   const set = useStore(s => s.set);
   const [providers, setProviders] = useState<ProviderCfg[]>(settings?.providers ?? []);
   const [models, setModels] = useState<Record<string, string[]>>({});
+  const [pingStatus, setPingStatus] = useState<Record<string, 'checking' | 'ok' | 'fail'>>({});
+  const [pingError, setPingError] = useState<Record<string, string>>({});
   const [newKey, setNewKey] = useState({ name: '', value: '' });
   const [workspaceInput, setWorkspaceInput] = useState('');
 
@@ -28,6 +30,18 @@ export function SettingsModal() {
     const res = await apiGet<{ models: string[]; error?: string }>(`/api/ai/models?providerId=${encodeURIComponent(id)}`);
     setModels(m => ({ ...m, [id]: res.models }));
     if (res.error) alert(`Could not list models: ${res.error}`);
+  };
+
+  const testConnection = async (id: string) => {
+    setPingStatus(s => ({ ...s, [id]: 'checking' }));
+    try {
+      const res = await apiGet<{ ok: boolean; error?: string }>(`/api/ai/ping?providerId=${encodeURIComponent(id)}`);
+      setPingStatus(s => ({ ...s, [id]: res.ok ? 'ok' : 'fail' }));
+      setPingError(e => ({ ...e, [id]: res.error ?? '' }));
+    } catch (err) {
+      setPingStatus(s => ({ ...s, [id]: 'fail' }));
+      setPingError(e => ({ ...e, [id]: (err as Error).message }));
+    }
   };
 
   const addProvider = () => {
@@ -66,8 +80,17 @@ export function SettingsModal() {
             <details key={p.id} style={{ marginBottom: 8, border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px' }}>
               <summary style={{ cursor: 'pointer' }}>
                 <b>{p.id}</b> <span className="badge">{p.kind}</span> {p.model && <code style={{ fontSize: 11 }}>{p.model}</code>}
+                {pingStatus[p.id] && (
+                  <span style={{ marginLeft: 8, color: pingStatus[p.id] === 'ok' ? 'var(--accent)' : pingStatus[p.id] === 'fail' ? 'var(--danger)' : 'var(--fg-dim)' }}>
+                    {pingStatus[p.id] === 'checking' ? '● checking…' : pingStatus[p.id] === 'ok' ? '● connected' : '● unreachable'}
+                  </span>
+                )}
               </summary>
               <div style={{ paddingTop: 8 }}>
+                <div className="form-inline">
+                  <button onClick={() => void testConnection(p.id)}>Test connection</button>
+                  {pingStatus[p.id] === 'fail' && pingError[p.id] && <span style={{ color: 'var(--danger)', fontSize: 11.5 }}>{pingError[p.id]}</span>}
+                </div>
                 <div className="form-row">
                   <label>Kind</label>
                   <select value={p.kind} onChange={e => void saveProviders(providers.map((q, j) => j === i ? { ...q, kind: e.target.value } : q))}>
@@ -132,6 +155,20 @@ export function SettingsModal() {
               type="number" min={1} style={{ width: 90 }}
               value={settings.agentMaxSteps}
               onChange={e => void updateSettings({ agentMaxSteps: Number(e.target.value) || 50 })}
+            />
+          </div>
+
+          <h4>Self-healing verification</h4>
+          <div className="form-inline">
+            <input type="checkbox" id="av" checked={settings.autoVerify} onChange={e => void updateSettings({ autoVerify: e.target.checked })} />
+            <label htmlFor="av">After the agent edits files, automatically run typecheck/lint/test/build and ask it to fix failures</label>
+          </div>
+          <div className="form-inline">
+            <label>Max auto-fix attempts before giving up and asking you</label>
+            <input
+              type="number" min={0} max={10} style={{ width: 70 }}
+              value={settings.autoHealAttempts}
+              onChange={e => void updateSettings({ autoHealAttempts: Number(e.target.value) || 0 })}
             />
           </div>
 

@@ -51,14 +51,20 @@ server/src/
   index.ts            entry point; wires routes, websockets, plugins, static client
   config.ts           settings + AES-256-GCM encrypted secret store
   terminal.ts         shell over WebSocket (node-pty if present, pipe fallback)
+  tasks.ts            long-running task manager (dev servers, watch builds)
   plugins.ts          plugin discovery and the PluginApi surface
   util/paths.ts       safeJoin() workspace jail + ignore lists
   util/exec.ts        shell-free child process helper
+  util/proc.ts        killTree() — tree-kill a process and everything it spawned
+  util/atomic.ts      writeFileAtomic() + withLock() — crash-safe writes
+  verify/             detect.ts (typecheck/lint/test/build script detection),
+                      runner.ts (cancellable, timeout-safe step execution)
   routes/             one file per REST area: fs, search, git, ai, index,
-                      conversations, settings
+                      conversations, settings, verify, tasks
   providers/          the AI backend layer (see below)
-  agent/              protocol.ts (action parsing), tools.ts (execution +
-                      undo history), agent.ts (the loop over WebSocket)
+  agent/              protocol.ts (plan + action parsing), tools.ts (execution,
+                      undo history, checkpoints), summary.ts (final-summary
+                      builder), agent.ts (the loop over WebSocket)
   intelligence/       project understanding — see "Project intelligence" below:
                       walk.ts (async walker + concurrency pool),
                       symbols.ts (symbol & import extraction),
@@ -72,10 +78,11 @@ server/src/
 client/src/
   main.tsx            bootstrap; loads monacoSetup (offline Monaco bundling)
   App.tsx             layout + global keyboard shortcuts
-  api.ts              typed fetch/SSE helpers
-  state/store.ts      zustand store: tabs, settings, panels
+  api.ts              typed fetch/SSE helpers (streamChat, streamSSE)
+  state/store.ts      zustand store: tabs, settings, panels, verify/task status
   components/         one file per UI region (Explorer, EditorArea, AIPanel,
-                      TerminalView, GitPanel, SettingsModal, …)
+                      TerminalView, GitPanel, VerifyPanel, TasksPanel,
+                      HistoryPanel, SettingsModal, …)
 ```
 
 ## The provider layer
@@ -98,12 +105,12 @@ and `gemini`. `registry.ts` maps a settings entry to an implementation, and
 Model switching is instant because providers are constructed per request from
 current settings — there is no long-lived connection to invalidate.
 
-## The agent
+## The agent — transparent, self-verifying, cancellable
 
 Local models rarely support provider-specific function calling, so the agent
 uses a **text protocol** any model can speak (see `agent/protocol.ts`): the
-model emits ```` ```action ```` fenced JSON blocks, the server parses and
-executes them, and appends results as the next user message. The loop:
+model emits ```` ```plan ```` and ```` ```action ```` fenced blocks, the server
+parses and executes them, and appends results as the next user message.
 
 ```mermaid
 sequenceDiagram
@@ -112,32 +119,77 @@ sequenceDiagram
     participant Agent as Agent loop
     participant Model
     participant Tools
+    participant Verify as Verify runner
 
     User->>UI: task
     UI->>Agent: start (WebSocket)
+    Agent->>Model: messages (system prompt + project map + history)
+    Model-->>UI: plan (shown BEFORE anything happens)
     loop until plain-text answer or step cap
-        Agent->>Model: messages (system prompt + project map + history)
         Model-->>Agent: narration + action blocks (streamed to UI)
         alt destructive action (write / delete / command)
-            Agent->>UI: approval-request (with diff for writes)
-            User->>Agent: approve / reject
+            Agent->>UI: approval-request (editable diff for writes)
+            User->>Agent: approve (optionally edited) / reject
         end
-        Agent->>Tools: execute
-        Tools-->>Agent: results (snapshot saved to undo history first)
+        Agent->>Tools: execute (snapshot saved first, for undo)
+        Tools-->>Agent: results
         Agent->>Model: TOOL RESULTS: …
     end
+    opt files changed and auto-verify is on
+        Agent->>Verify: typecheck / lint / test / build
+        Verify-->>Agent: pass, or first failure
+        opt failed, and under the auto-heal cap
+            Agent->>Model: VERIFICATION FAILED: … (fix it)
+            Note over Agent,Model: repeats the think/act loop, then re-verifies
+        end
+    end
+    Agent->>UI: summary (files changed, verify result, undo pointer)
     Agent->>UI: done
 ```
+
+**Transparency contract**: the agent must plan before it acts (the system
+prompt requires a ` ```plan ` block before the first action of non-trivial
+work — see `agentSystemPrompt` in `protocol.ts`), every destructive action is
+shown and approved individually, and every run ends with a factual summary
+(`agent/summary.ts` — a pure, deterministic function, so it never depends on
+the model remembering to explain itself).
+
+**Modify, not just approve/reject**: the diff shown for `write_file` is
+editable in the UI (`AIPanel.tsx`'s `DiffEditor` with `readOnly: false` on the
+modified side). Whatever is in the editor when you click Apply is what gets
+written — `executeTool`'s `editedContent` parameter always wins over the
+model's own proposed content.
+
+**Self-healing loop**: if the agent changed any files and Settings →
+"Auto-verify" is on, `verify/runner.ts` runs the project's detected
+typecheck/lint/test/build scripts. A failure is handed back to the model as a
+new turn (bounded by "Max auto-fix attempts" — a real cap, not a suggestion).
+Each phase — the initial task and every heal round — gets its **own** full
+step budget (`agentMaxSteps`); sharing one counter across heal rounds would
+mean a task that used its whole budget just finishing the primary work leaves
+zero steps for healing.
+
+**Cancellation actually kills things**: `{type:'cancel'}` aborts whatever is
+in flight right now — the model's stream, a running verification step, or a
+running `run_command` — via a shared `AbortController` threaded all the way
+into `runStep`/`runInWorkspace`, which `killTree()` the process (and anything
+it spawned) immediately rather than waiting for a timeout. Verified live: a
+verification step that would otherwise hang forever is killed within ~2
+seconds of cancelling, with no orphaned process left behind.
 
 Safety properties:
 
 - **Workspace jail** — every tool path goes through `safeJoin()`, which
-  rejects anything resolving outside the workspace.
-- **Approval gates** — `write_file` always shows a diff; `run_command` and
-  `delete_file` prompt according to your Settings. Dependency installs are a
-  separately toggleable category.
-- **Undo** — before any write or delete, the previous content is snapshotted
-  (`agent/tools.ts`). The History panel rolls back any change.
+  rejects anything resolving outside the workspace (symlink-aware, see
+  Security below).
+- **Approval gates** — `write_file` always shows an editable diff;
+  `run_command` and `delete_file` prompt according to your Settings.
+  Dependency installs are a separately toggleable category.
+- **Undo, two granularities** — every write/delete snapshots the previous
+  content (`agent/tools.ts`). The History panel rolls back any single file, or
+  a whole agent run (including every auto-heal round) as one **checkpoint** —
+  restoring to each file's state from *before the run's first change to it*,
+  not just its most recent snapshot.
 - **Step cap** — a user-editable setting, not a product limit.
 
 ## Project intelligence
@@ -189,6 +241,29 @@ flowchart TB
 - **Search** (`search.ts`): reads candidate files from the index with bounded
   concurrency via `fs/promises` — non-blocking, and no re-walk of the tree.
 
+## Verification and tasks
+
+Two small subsystems back the "make the project green" and "run things
+reliably" requirements:
+
+- **`verify/detect.ts` + `verify/runner.ts`** — detects typecheck/lint/test/build
+  scripts from `package.json` + lockfile evidence (falling back to a bare
+  `tsc --noEmit` when there's a tsconfig but no script), then runs them
+  in order, streaming output, stopping at the first failure. Every step is
+  spawned in its own process group so it can be killed as a tree — a hung
+  watch-mode test runner, or a user hitting Cancel, can't leave orphans.
+  `CI=1` is set so tools that only avoid watch-mode with a detected CI
+  environment behave correctly; the timeout (and now the cancel signal) is
+  the hard backstop regardless.
+- **`tasks.ts`** — long-running processes (dev servers, watch builds) as
+  first-class, trackable tasks distinct from the interactive terminal and
+  from one-off agent commands: start/stop/restart, live log streaming (SSE),
+  and killed as a tree on stop *and* on server shutdown (`killAllTasks()`).
+
+Both share `util/proc.ts`'s `killTree()` — one implementation of "kill this
+process and everything it spawned," used by verification, tasks, and the
+agent's `run_command`, instead of three slightly-different copies.
+
 ## Extension points (stable surfaces)
 
 | To add… | Touch |
@@ -199,6 +274,7 @@ flowchart TB
 | A theme | a `:root[data-theme='name']` block in `client/src/styles.css` |
 | A command | `CommandPalette.tsx` commands array, or a plugin `addCommand()` |
 | A framework detector | `intelligence/detect.ts` |
+| A retrieval strategy | implement `Retriever` (`intelligence/retrieval.ts`) and call `setRetriever()` — a plugin can do this via `api.setRetriever()` |
 
 ## Design rules
 

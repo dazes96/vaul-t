@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Express } from 'express';
 import { registerProviderKind } from './providers/registry.js';
+import { setRetriever, type Retriever } from './intelligence/retrieval.js';
 
 /**
  * Plugin system. A plugin is a folder inside `plugins/` (next to the repo
@@ -17,6 +18,8 @@ export interface PluginApi {
   addRoute(subpath: string, handler: (req: unknown, res: unknown) => void): void;
   /** Register a new AI provider kind usable from Settings. */
   registerProviderKind: typeof registerProviderKind;
+  /** Replace the context-selection strategy (e.g. with an embeddings-backed retriever). */
+  setRetriever(r: Retriever): void;
   /** Register a command shown in the client command palette. */
   addCommand(cmd: { id: string; title: string; description?: string }): void;
   log(...args: unknown[]): void;
@@ -43,6 +46,7 @@ export async function loadPlugins(app: Express, pluginsDir: string): Promise<Loa
           app.all(`/api/plugins/${name}${subpath.startsWith('/') ? subpath : '/' + subpath}`, handler as never);
         },
         registerProviderKind,
+        setRetriever,
         addCommand(cmd) { plugin.commands.push(cmd); },
         log: (...args) => console.log(`[plugin:${name}]`, ...args),
       };

@@ -16,13 +16,16 @@ line of it belongs to you.
 |---|---|
 | **Editor** | Monaco (the VS Code editor engine), tabs, themes (dark/light), search & replace across files, markdown preview, image viewer, JSON viewer, command palette (Ctrl+P) |
 | **AI Chat** | Chat with your whole codebase — relevant files are selected and included automatically. Modes: Chat, Explain (beginner-friendly), Review, Docs |
-| **AI Agent** | Multi-step tasks: plans, reads files, edits multiple files, runs commands, detects failures and fixes them. Every write shows a **diff you approve or reject**; every change is **undoable** from Change History |
+| **AI Agent** | Plans before it acts (shown to you as a plan card), edits multiple files, runs commands. Every write shows an **editable diff** you approve, reject, or modify; every run is **undoable as one checkpoint** from Change History |
+| **Self-healing** | After the agent changes files, it automatically typechecks/lints/tests/builds and hands failures back to itself to fix — bounded by a setting you control, never unattended forever |
+| **Cancellation** | Stop actually stops: a running verification step or terminal command is killed within seconds, not left to time out |
+| **Tasks** | Dev servers and watch builds as trackable, stoppable/restartable processes with live logs — distinct from the terminal, never orphaned |
 | **Autocomplete** | Inline AI completions as you type, powered by whatever model you choose |
 | **Terminal** | Real integrated shell (bottom panel) |
 | **Git** | Status, stage, commit, diff, log, reset — via your system git |
-| **Project intelligence** | Automatic detection of frameworks (React, Next.js, Vue, Laravel, WordPress themes & plugins, Tailwind, Docker…), languages, package manager; generates a project map the AI uses as memory |
+| **Project intelligence** | Async, incremental, symbol- and import-graph-aware index kept live by a background watcher; automatic framework detection (React, Next.js, Vue, Laravel, WordPress themes & plugins, Tailwind, Docker…); retrieval finds code by what it *does*, not just filename matches |
 | **Beginner mode** | One toggle and the AI explains everything in plain language, assumes zero programming knowledge, and describes each change before making it |
-| **Extensibility** | Plugin system (server routes, commands, new AI provider kinds), documented architecture, clear extension APIs |
+| **Extensibility** | Plugin system (server routes, commands, new AI provider kinds, swappable retrieval strategy), documented architecture, clear extension APIs |
 
 ## Quick start
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DiffEditor } from '@monaco-editor/react';
+import { DiffEditor, type DiffOnMount } from '@monaco-editor/react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { apiGet, apiPost, apiDelete, streamChat, type ChatMessage } from '../api';
@@ -9,8 +9,9 @@ import { languageForPath } from '../monacoSetup';
 type Mode = 'chat' | 'agent' | 'explain' | 'review' | 'docs';
 
 interface DisplayMsg {
-  role: 'user' | 'assistant' | 'event';
+  role: 'user' | 'assistant' | 'event' | 'plan' | 'summary';
   content: string;
+  runId?: string;   // set on 'summary' messages, so the Undo button knows which checkpoint to restore
 }
 
 interface Approval {
@@ -30,6 +31,7 @@ export function AIPanel() {
   const [messages, setMessages] = useState<DisplayMsg[]>([]);
   const [busy, setBusy] = useState(false);
   const [approval, setApproval] = useState<Approval | null>(null);
+  const editedContentRef = useRef<string | null>(null);
   const [conversations, setConversations] = useState<{ id: string; title: string }[]>([]);
   const [convId, setConvId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -38,6 +40,7 @@ export function AIPanel() {
   const workspace = useStore(s => s.workspace);
   const settings = useStore(s => s.settings);
   const refreshTree = useStore(s => s.refreshTree);
+  const set = useStore(s => s.set);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -137,7 +140,13 @@ export function AIPanel() {
             flush();
             break;
           }
+          case 'plan':
+            if (streaming) { current = [...current, { role: 'assistant', content: streaming }]; streaming = ''; }
+            current = [...current, { role: 'plan', content: msg.text }];
+            flush();
+            break;
           case 'approval-request':
+            editedContentRef.current = null;
             setApproval({ id: msg.id, action: msg.action, preview: msg.preview });
             break;
           case 'tool-result':
@@ -145,8 +154,29 @@ export function AIPanel() {
             if (msg.tool === 'write_file' || msg.tool === 'delete_file') refreshTree();
             flush();
             break;
+          case 'verify-start':
+            set('verifyStatus', 'running');
+            current = [...current, { role: 'event', content: `🔎 Verifying changes (${msg.steps.map((s: { label: string }) => s.label).join(', ')})…` }];
+            flush();
+            break;
+          case 'verify-step': {
+            const r = msg.result;
+            current = [...current, { role: 'event', content: `${r.ok ? '✓' : '✗'} ${r.label} (${r.durationMs}ms)${r.ok ? '' : `\n${String(r.output).slice(0, 500)}`}` }];
+            flush();
+            break;
+          }
+          case 'verify-done':
+            set('verifyStatus', msg.ok ? 'pass' : 'fail');
+            current = [...current, { role: 'event', content: msg.ok ? '✓ Verification passed' : '✗ Verification failed — asking the agent to fix it' }];
+            flush();
+            break;
           case 'error':
             current = [...current, { role: 'event', content: `⚠ ${msg.message}` }];
+            flush();
+            break;
+          case 'summary':
+            if (streaming) { current = [...current, { role: 'assistant', content: streaming }]; streaming = ''; }
+            current = [...current, { role: 'summary', content: msg.text, runId: msg.runId }];
             flush();
             break;
           case 'done':
@@ -168,9 +198,21 @@ export function AIPanel() {
 
   function answerApproval(approved: boolean) {
     if (approval && wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'approve', id: approval.id, approved }));
+      // editedContentRef is only meaningful for write_file's diff editor; if the
+      // user never touched it, it stays null and the server just uses the
+      // agent's original proposed content.
+      const editedContent = approved && approval.action.tool === 'write_file' ? editedContentRef.current ?? undefined : undefined;
+      wsRef.current.send(JSON.stringify({ type: 'approve', id: approval.id, approved, editedContent }));
     }
     setApproval(null);
+    editedContentRef.current = null;
+  }
+
+  async function undoRun(runId: string) {
+    if (!window.confirm('Undo everything this agent run changed?')) return;
+    const res = await apiPost<{ ok: boolean; message: string }>('/api/settings/checkpoints/rollback', { runId });
+    refreshTree();
+    setMessages(m => [...m, { role: 'event', content: `↺ ${res.message}` }]);
   }
 
   function stop() {
@@ -214,11 +256,29 @@ export function AIPanel() {
             <b>Explain / Review / Docs</b> — focused modes for understanding, reviewing, and documenting.
           </div>
         )}
-        {messages.map((m, i) =>
-          m.role === 'event'
-            ? <div key={i} className="msg event">{m.content}</div>
-            : <div key={i} className={`msg ${m.role}`}><Markdown text={m.content} /></div>,
-        )}
+        {messages.map((m, i) => {
+          if (m.role === 'event') return <div key={i} className="msg event">{m.content}</div>;
+          if (m.role === 'plan') {
+            return (
+              <div key={i} className="msg plan">
+                <div className="plan-label">📋 Plan</div>
+                <Markdown text={m.content} />
+              </div>
+            );
+          }
+          if (m.role === 'summary') {
+            return (
+              <div key={i} className="msg summary">
+                <div className="plan-label">✔ Summary</div>
+                <Markdown text={m.content} />
+                {m.runId && (
+                  <button className="danger" style={{ marginTop: 6 }} onClick={() => void undoRun(m.runId!)}>↺ Undo this run</button>
+                )}
+              </div>
+            );
+          }
+          return <div key={i} className={`msg ${m.role}`}><Markdown text={m.content} /></div>;
+        })}
         {busy && !approval && <div className="msg event">…thinking</div>}
       </div>
 
@@ -231,16 +291,27 @@ export function AIPanel() {
             </header>
             <div className="modal-body">
               {approval.preview ? (
-                <div className="approval-diff">
-                  <DiffEditor
-                    height="100%"
-                    original={approval.preview.oldContent ?? ''}
-                    modified={approval.preview.newContent}
-                    language={languageForPath(String(approval.action.path ?? ''))}
-                    theme={settings?.theme === 'light' ? 'light' : 'vs-dark'}
-                    options={{ readOnly: true, renderSideBySide: false, minimap: { enabled: false } }}
-                  />
-                </div>
+                <>
+                  <div style={{ color: 'var(--fg-dim)', fontSize: 12, marginBottom: 6 }}>
+                    The right-hand side is editable — change anything before applying, and your version is what gets written.
+                  </div>
+                  <div className="approval-diff">
+                    <DiffEditor
+                      height="100%"
+                      original={approval.preview.oldContent ?? ''}
+                      modified={approval.preview.newContent}
+                      language={languageForPath(String(approval.action.path ?? ''))}
+                      theme={settings?.theme === 'light' ? 'light' : 'vs-dark'}
+                      options={{ readOnly: false, originalEditable: false, renderSideBySide: false, minimap: { enabled: false } }}
+                      onMount={((diffEditor) => {
+                        const modifiedEditor = diffEditor.getModifiedEditor();
+                        modifiedEditor.onDidChangeModelContent(() => {
+                          editedContentRef.current = modifiedEditor.getValue();
+                        });
+                      }) as DiffOnMount}
+                    />
+                  </div>
+                </>
               ) : (
                 <pre className="output-log">{JSON.stringify(approval.action, null, 2)}</pre>
               )}

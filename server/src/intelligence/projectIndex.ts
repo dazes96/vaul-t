@@ -38,6 +38,8 @@ export class ProjectIndex {
   private outEdges = new Map<string, Set<string>>();
   /** file -> files that import it */
   private inEdges = new Map<string, Set<string>>();
+  /** file -> last time it was read, written, or opened — a recency signal for retrieval (Priority 9). */
+  private recent = new Map<string, number>();
   info: ProjectInfo = { frameworks: [], languages: {}, packageManager: null, buildTools: [], dependencies: [] };
 
   constructor(root: string) { this.root = root; }
@@ -118,6 +120,7 @@ export class ProjectIndex {
     const out = this.outEdges.get(relPath);
     if (out) for (const dep of out) this.inEdges.get(dep)?.delete(relPath);
     this.outEdges.delete(relPath);
+    this.recent.delete(relPath);
   }
 
   // --- Import graph ---------------------------------------------------------
@@ -175,6 +178,16 @@ export class ProjectIndex {
   /** Neighbours in the dependency graph, both directions — "related files." */
   neighbours(relPath: string): string[] {
     return [...new Set([...this.importsOf(relPath), ...this.importedBy(relPath)])];
+  }
+
+  /** Record that a file was just read, written, or opened — recency signal for retrieval. */
+  touch(relPath: string): void {
+    if (this.files.has(relPath)) this.recent.set(relPath, Date.now());
+  }
+
+  /** Most recently touched files, newest first. */
+  recentFiles(limit = 30): string[] {
+    return [...this.recent.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([p]) => p);
   }
 
   /** Compact markdown project map, given to the model as architecture memory. */

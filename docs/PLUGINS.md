@@ -31,8 +31,33 @@ npm start
 |---|---|
 | `api.addRoute(subpath, handler)` | Mount an Express handler at `/api/plugins/<name><subpath>`. Handler gets standard `(req, res)`. |
 | `api.registerProviderKind(kind, factory)` | Add a new AI backend type selectable in Settings. `factory(cfg, apiKey)` must return a `Provider` (see below). |
+| `api.setRetriever(retriever)` | Replace how the AI picks which files to read for a question — see below. |
 | `api.addCommand({ id, title, description })` | Register a command; the list is served at `GET /api/plugins`. |
 | `api.log(...)` | Namespaced console logging. |
+
+### Writing a custom retriever
+
+The built-in `HeuristicRetriever` (`server/src/intelligence/retrieval.ts`)
+scores files by defined symbols, path terms, a content-search fallback,
+import-graph proximity, and recent-edit signal — no embeddings. To swap in
+real semantic search (or anything else), implement the `Retriever` interface
+and call `api.setRetriever()`:
+
+```js
+export default function register(api) {
+  api.setRetriever({
+    async selectContext(index, query, budgetBytes) {
+      // index: the live ProjectIndex for the current workspace (files,
+      //   symbols, import graph — see projectIndex.ts for the read API)
+      // return an array of { path, content, reason }
+      return [];
+    },
+  });
+}
+```
+
+This replaces the strategy for every chat and agent request immediately —
+there is no restart required and no other code to touch.
 
 ### Writing a custom AI provider
 

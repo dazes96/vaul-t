@@ -90,5 +90,33 @@ export function aiRoutes(getWorkspace: () => string): Router {
     }
   });
 
+  /**
+   * GET /api/ai/ping?providerId= — explicit, on-demand connectivity check
+   * (never polled automatically, so it never generates background traffic
+   * or unwanted cost against a paid API). Tries listModels() first, which is
+   * free on every built-in provider except Anthropic; for providers with no
+   * model-list endpoint, falls back to a 1-token chat call so "Test
+   * connection" still means something for them.
+   */
+  r.get('/ping', async (req, res) => {
+    const start = Date.now();
+    try {
+      const provider = buildProvider(loadSettings(), req.query.providerId ? String(req.query.providerId) : undefined);
+      const models = await provider.listModels();
+      if (models.length > 0) return res.json({ ok: true, models, ms: Date.now() - start });
+
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), 8000);
+      try {
+        for await (const _ of provider.streamChat([{ role: 'user', content: 'hi' }], { signal: abort.signal, maxTokens: 1 })) break;
+        res.json({ ok: true, models: [], ms: Date.now() - start });
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (err) {
+      res.json({ ok: false, error: (err as Error).message, ms: Date.now() - start });
+    }
+  });
+
   return r;
 }
