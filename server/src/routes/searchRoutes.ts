@@ -2,19 +2,17 @@ import { Router } from 'express';
 import fs from 'node:fs';
 import { safeJoin } from '../util/paths.js';
 import { writeFileAtomic } from '../util/atomic.js';
-import { searchWorkspace } from '../agent/tools.js';
+import { getProjectIndex } from '../intelligence/manager.js';
+import { searchAsync } from '../intelligence/search.js';
 
 export function searchRoutes(getWorkspace: () => string): Router {
   const r = Router();
 
-  r.get('/', (req, res) => {
+  r.get('/', async (req, res) => {
     const query = String(req.query.q ?? '');
     if (!query) return res.json({ results: [] });
-    const raw = searchWorkspace(getWorkspace(), query, 200);
-    const results = raw === '(no matches)' ? [] : raw.split('\n').map(line => {
-      const m = line.match(/^(.+?):(\d+): (.*)$/);
-      return m ? { path: m[1], line: Number(m[2]), text: m[3] } : null;
-    }).filter(Boolean);
+    const index = await getProjectIndex(getWorkspace());
+    const results = await searchAsync(index, query, 200);
     res.json({ results });
   });
 

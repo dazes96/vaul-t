@@ -1,28 +1,46 @@
 import { Router } from 'express';
-import { buildIndex, type ProjectIndex } from '../intelligence/indexer.js';
+import { getProjectIndex, rebuildProjectIndex } from '../intelligence/manager.js';
 
-// One cached index per workspace; rebuilt incrementally on demand.
-const cache = new Map<string, ProjectIndex>();
-
-export function getIndex(workspace: string, forceRefresh = false): ProjectIndex {
-  const cached = cache.get(workspace);
-  if (cached && !forceRefresh && Date.now() - cached.builtAt < 30_000) return cached;
-  const fresh = buildIndex(workspace, cached);
-  cache.set(workspace, fresh);
-  return fresh;
+/** Backwards-compatible accessor used by the agent and AI routes. */
+export function getIndex(workspace: string) {
+  return getProjectIndex(workspace);
 }
 
 export function indexRoutes(getWorkspace: () => string): Router {
   const r = Router();
 
-  r.get('/', (req, res) => {
-    const idx = getIndex(getWorkspace(), req.query.refresh === '1');
+  r.get('/', async (req, res) => {
+    const idx = req.query.refresh === '1'
+      ? await rebuildProjectIndex(getWorkspace())
+      : await getProjectIndex(getWorkspace());
     res.json({
       builtAt: idx.builtAt,
-      fileCount: idx.files.length,
+      fileCount: idx.fileCount,
+      symbolCount: idx.symbolCount,
+      edgeCount: idx.edgeCount,
       info: idx.info,
       map: idx.map,
     });
+  });
+
+  /** Flat file list (used by the command palette — replaces fragile map parsing). */
+  r.get('/files', async (_req, res) => {
+    const idx = await getProjectIndex(getWorkspace());
+    res.json(idx.filePaths());
+  });
+
+  /** Symbols defined in a file — foundation for future outline/go-to-symbol. */
+  r.get('/symbols', async (req, res) => {
+    const idx = await getProjectIndex(getWorkspace());
+    const entry = idx.getFile(String(req.query.path));
+    res.json(entry?.symbols ?? []);
+  });
+
+  /** Dependency-graph neighbours of a file — what it imports and what imports it. */
+  r.get('/graph', async (req, res) => {
+    const idx = await getProjectIndex(getWorkspace());
+    const p = String(req.query.path);
+    res.json({ imports: idx.importsOf(p), importedBy: idx.importedBy(p) });
   });
 
   return r;

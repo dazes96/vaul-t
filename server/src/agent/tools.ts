@@ -3,7 +3,8 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { safeJoin, isIgnoredDir, dataDir } from '../util/paths.js';
 import { writeFileAtomic } from '../util/atomic.js';
-import { isTextFile } from '../intelligence/indexer.js';
+import { getProjectIndex } from '../intelligence/manager.js';
+import { searchAsync } from '../intelligence/search.js';
 import type { AgentAction } from './protocol.js';
 
 export interface ToolResult {
@@ -94,7 +95,10 @@ export async function executeTool(workspace: string, action: AgentAction): Promi
         return { ok: true, output: entries.join('\n') || '(empty)' };
       }
       case 'search': {
-        return { ok: true, output: searchWorkspace(workspace, String(action.query)) };
+        const index = await getProjectIndex(workspace);
+        const hits = await searchAsync(index, String(action.query));
+        const out = hits.length ? hits.map(h => `${h.path}:${h.line}: ${h.text}`).join('\n') : '(no matches)';
+        return { ok: true, output: out };
       }
       case 'write_file': {
         const rel = String(action.path);
@@ -137,36 +141,4 @@ function runInWorkspace(cwd: string, command: string): Promise<ToolResult> {
     });
     child.on('error', err => resolve({ ok: false, output: `Failed to start: ${err.message}` }));
   });
-}
-
-export function searchWorkspace(root: string, query: string, maxResults = 100): string {
-  const results: string[] = [];
-  const q = query.toLowerCase();
-
-  function walk(dir: string, rel: string) {
-    if (results.length >= maxResults) return;
-    let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      if (results.length >= maxResults) return;
-      if (e.name.startsWith('.') || isIgnoredDir(e.name)) continue;
-      const relPath = rel ? `${rel}/${e.name}` : e.name;
-      const absPath = path.join(dir, e.name);
-      if (e.isDirectory()) walk(absPath, relPath);
-      else if (e.isFile() && isTextFile(e.name)) {
-        try {
-          if (fs.statSync(absPath).size > 500_000) continue;
-          const lines = fs.readFileSync(absPath, 'utf8').split('\n');
-          for (let i = 0; i < lines.length && results.length < maxResults; i++) {
-            if (lines[i].toLowerCase().includes(q)) {
-              results.push(`${relPath}:${i + 1}: ${lines[i].trim().slice(0, 200)}`);
-            }
-          }
-        } catch { /* unreadable */ }
-      }
-    }
-  }
-
-  walk(root, '');
-  return results.length ? results.join('\n') : '(no matches)';
 }

@@ -24,16 +24,8 @@ export function CommandPalette() {
 
   useEffect(() => {
     inputRef.current?.focus();
-    void apiGet<{ map: string; fileCount: number }>('/api/index').then(async () => {
-      // Full flat file list comes from walking the tree map lines
-      const idx = await apiGet<{ map: string }>('/api/index');
-      const paths: string[] = [];
-      for (const line of idx.map.split('\n')) {
-        const m = line.match(/^- `(.+?)\/`: (.+)$/);
-        if (m) for (const name of m[2].split(', ')) paths.push(m[1] === '.' ? name : `${m[1]}/${name}`);
-      }
-      setFiles(paths);
-    });
+    // Flat file list straight from the index — no fragile map-markdown parsing.
+    void apiGet<string[]>('/api/index/files').then(setFiles).catch(() => setFiles([]));
   }, []);
 
   const close = () => set('paletteOpen', false);

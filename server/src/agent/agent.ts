@@ -63,7 +63,7 @@ export function handleAgentSocket(ws: WebSocket, workspace: string): void {
   async function runAgent(task: string, priorHistory: ChatMessage[]): Promise<void> {
     const settings = loadSettings();
     const provider = buildProvider(settings);
-    const index = getIndex(workspace);
+    const index = await getIndex(workspace);
     const messages: ChatMessage[] = [
       { role: 'system', content: agentSystemPrompt(index.map, settings.beginnerMode) },
       ...priorHistory,

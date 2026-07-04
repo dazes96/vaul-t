@@ -17,7 +17,9 @@ beforeAll(() => {
   fs.writeFileSync(path.join(ws, 'src/app.ts'), 'const answer = 42;');
 });
 
-afterAll(() => {
+afterAll(async () => {
+  const { closeAllIndexes } = await import('../src/intelligence/manager.js');
+  await closeAllIndexes();   // stop file watchers so the test process can exit
   fs.rmSync(ws, { recursive: true, force: true });
   fs.rmSync(dataDir, { recursive: true, force: true });
 });

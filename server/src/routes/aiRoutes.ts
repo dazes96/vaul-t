@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { loadSettings } from '../config.js';
 import { buildProvider } from '../providers/registry.js';
 import type { ChatMessage } from '../providers/types.js';
-import { getIndex, } from './indexRoute.js';
-import { selectContextFiles } from '../intelligence/indexer.js';
+import { getIndex } from './indexRoute.js';
+import { selectContext } from '../intelligence/retrieval.js';
 
 function chatSystemPrompt(projectMap: string, beginnerMode: boolean, mode: string): string {
   const base = `You are the AI assistant inside Emerald Code Studio, a local open-source IDE. You have been given a map of the user's project and the most relevant files. Answer precisely and reference files by their relative paths.`;
@@ -32,17 +32,18 @@ export function aiRoutes(getWorkspace: () => string): Router {
     };
     const settings = loadSettings();
     const provider = buildProvider(settings, providerId);
-    const index = getIndex(getWorkspace());
+    const index = await getIndex(getWorkspace());
 
     const system: ChatMessage = { role: 'system', content: chatSystemPrompt(index.map, settings.beginnerMode, mode) };
     const full: ChatMessage[] = [system];
     if (includeContext && messages.length) {
       const lastUser = [...messages].reverse().find(m => m.role === 'user');
-      const files = selectContextFiles(index, lastUser?.content ?? '');
+      const files = await selectContext(index, lastUser?.content ?? '');
       if (files.length) {
         full.push({
           role: 'user',
-          content: 'Relevant project files for context:\n\n' + files.map(f => `### ${f.path}\n\`\`\`\n${f.content}\n\`\`\``).join('\n\n'),
+          content: 'Relevant project files for context (selected by symbol, path, and import-graph relevance):\n\n'
+            + files.map(f => `### ${f.path} (${f.reason})\n\`\`\`\n${f.content}\n\`\`\``).join('\n\n'),
         });
         full.push({ role: 'assistant', content: 'I have read the project context. What would you like to do?' });
       }

@@ -16,6 +16,7 @@ import { handleTerminalSocket } from './terminal.js';
 import { handleAgentSocket } from './agent/agent.js';
 import { loadPlugins, type LoadedPlugin } from './plugins.js';
 import { isAllowedOrigin } from './util/origin.js';
+import { closeAllIndexes } from './intelligence/manager.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.EMERALD_PORT || 4620);
@@ -120,8 +121,12 @@ async function main() {
     console.log(`\n  ${signal} received — shutting down cleanly…`);
     for (const client of wss.clients) client.close();
     wss.close();
+    void closeAllIndexes();
     server.close(() => process.exit(0));
-    // Hard-stop if something refuses to release within 5s.
+    // Drop lingering HTTP keep-alive sockets so close() returns promptly
+    // instead of waiting for idle connections to time out.
+    server.closeAllConnections?.();
+    // Hard-stop if something still refuses to release within 5s.
     setTimeout(() => process.exit(0), 5000).unref();
   };
   process.on('SIGINT', () => shutdown('SIGINT'));

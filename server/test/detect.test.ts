@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { detectProject } from '../src/intelligence/detect.js';
-import { buildIndex } from '../src/intelligence/indexer.js';
 
 let dir: string;
 
@@ -44,22 +43,3 @@ describe('project detection', () => {
   });
 });
 
-describe('indexer', () => {
-  it('indexes files, skips node_modules, and builds a map', () => {
-    fs.mkdirSync(path.join(dir, 'src'));
-    fs.mkdirSync(path.join(dir, 'node_modules/pkg'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'src/main.ts'), 'export {}');
-    fs.writeFileSync(path.join(dir, 'node_modules/pkg/index.js'), '');
-    const idx = buildIndex(dir);
-    expect(idx.files.map(f => f.path)).toContain('src/main.ts');
-    expect(idx.files.some(f => f.path.includes('node_modules'))).toBe(false);
-    expect(idx.map).toContain('`src/`: main.ts');
-  });
-
-  it('reuses unchanged entries on incremental rebuild', () => {
-    fs.writeFileSync(path.join(dir, 'a.ts'), 'x');
-    const first = buildIndex(dir);
-    const second = buildIndex(dir, first);
-    expect(second.files[0]).toBe(first.files[0]); // same object => reused
-  });
-});
