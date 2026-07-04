@@ -5,6 +5,7 @@ const items: { id: SidePanel; icon: string; title: string }[] = [
   { id: 'search', icon: '🔍', title: 'Search' },
   { id: 'git', icon: '⎇', title: 'Git' },
   { id: 'history', icon: '↩', title: 'Change History' },
+  { id: 'memory', icon: '🧠', title: 'Project Memory' },
 ];
 
 export function ActivityBar() {
@@ -24,6 +25,7 @@ export function ActivityBar() {
         </button>
       ))}
       <div className="spacer" />
+      <button title="Project Graph" onClick={() => set('graphOpen', true)}>🕸</button>
       <button title="AI Assistant (Ctrl+L)" onClick={() => set('aiVisible', !useStore.getState().aiVisible)}>✦</button>
       <button title="Settings (Ctrl+,)" onClick={() => set('settingsOpen', true)}>⚙</button>
     </div>

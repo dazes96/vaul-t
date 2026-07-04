@@ -8,6 +8,7 @@ import { getIndex } from '../routes/indexRoute.js';
 import { detectVerifySteps } from '../verify/detect.js';
 import { runVerification, type VerifyStepResult } from '../verify/runner.js';
 import { buildRunSummary } from './summary.js';
+import { loadMemory, memoryContext, recordAgentRun } from '../memory/memory.js';
 
 interface Approval {
   approved: boolean;
@@ -83,8 +84,14 @@ export function handleAgentSocket(ws: WebSocket, workspace: string): void {
     const settings = loadSettings();
     const provider = buildProvider(settings);
     const index = await getIndex(workspace);
+    // Project memory, relevance-filtered to this task, is given to the agent so
+    // it plans WITH what the IDE already knows about the project (architecture,
+    // conventions, prior fixes) instead of rediscovering it every time.
+    const memBlock = memoryContext(loadMemory(workspace), task);
+    const systemContent = agentSystemPrompt(index.map, settings.beginnerMode)
+      + (memBlock ? `\n\n${memBlock}` : '');
     const messages: ChatMessage[] = [
-      { role: 'system', content: agentSystemPrompt(index.map, settings.beginnerMode) },
+      { role: 'system', content: systemContent },
       ...priorHistory,
       { role: 'user', content: task },
     ];
@@ -162,6 +169,7 @@ export function handleAgentSocket(ws: WebSocket, workspace: string): void {
     // model for a bounded number of fix-and-recheck rounds. This never runs
     // unattended forever — autoHealAttempts is a hard cap, not a suggestion.
     let verifyOutcome: { ranSteps: boolean; ok: boolean; failedLabel?: string } | null = null;
+    let healedLabel: string | undefined;   // the failure the self-heal loop actually fixed
     if (filesChanged && settings.autoVerify) {
       const steps = detectVerifySteps(workspace);
       if (steps.length > 0) {
@@ -179,6 +187,7 @@ export function handleAgentSocket(ws: WebSocket, workspace: string): void {
           const failed = results.find(r => !r.ok);
           verifyOutcome = { ranSteps: true, ok: !failed, failedLabel: failed?.label };
           send({ type: 'verify-done', ok: !failed, results });
+          if (failed && !healedLabel) healedLabel = failed.label; // remember the first failure so a later pass records it as healed
           if (!failed) break;
           if (heal >= settings.autoHealAttempts) {
             send({ type: 'error', message: `Verification still failing after ${settings.autoHealAttempts} auto-fix attempt(s) (${failed.label}). Review the output and fix manually, or ask the agent to try a different approach.` });
@@ -198,6 +207,18 @@ export function handleAgentSocket(ws: WebSocket, workspace: string): void {
     function sendSummary(verify: { ranSteps: boolean; ok: boolean; failedLabel?: string } | null, wasCancelled: boolean): void {
       const files = filesChanged ? (getCheckpoint(runId)?.files ?? []) : [];
       const text = buildRunSummary({ task, filesChanged: files, verify, cancelled: wasCancelled, stepsUsed: totalStepsUsed, runId });
+      // Update project memory after a run that actually changed files (even a
+      // cancelled one — those files still exist and are worth remembering).
+      // A verification that failed at least once and then passed records the
+      // heal as a resolved bug, so "self-healing results are saved when useful".
+      if (files.length > 0) {
+        recordAgentRun(workspace, {
+          task,
+          files,
+          verifyOk: verify ? verify.ok : null,
+          healedLabel: verify?.ok ? healedLabel : undefined,
+        });
+      }
       send({ type: 'summary', runId, text });
     }
   }

@@ -4,6 +4,7 @@ import { buildProvider } from '../providers/registry.js';
 import type { ChatMessage } from '../providers/types.js';
 import { getIndex } from './indexRoute.js';
 import { selectContext } from '../intelligence/retrieval.js';
+import { loadMemory, memoryContext } from '../memory/memory.js';
 
 function chatSystemPrompt(projectMap: string, beginnerMode: boolean, mode: string): string {
   const base = `You are the AI assistant inside Emerald Code Studio, a local open-source IDE. You have been given a map of the user's project and the most relevant files. Answer precisely and reference files by their relative paths.`;
@@ -34,10 +35,14 @@ export function aiRoutes(getWorkspace: () => string): Router {
     const provider = buildProvider(settings, providerId);
     const index = await getIndex(getWorkspace());
 
-    const system: ChatMessage = { role: 'system', content: chatSystemPrompt(index.map, settings.beginnerMode, mode) };
+    const lastUser = [...messages].reverse().find(m => m.role === 'user');
+    const memBlock = memoryContext(loadMemory(getWorkspace()), lastUser?.content ?? '');
+    const system: ChatMessage = {
+      role: 'system',
+      content: chatSystemPrompt(index.map, settings.beginnerMode, mode) + (memBlock ? `\n\n${memBlock}` : ''),
+    };
     const full: ChatMessage[] = [system];
     if (includeContext && messages.length) {
-      const lastUser = [...messages].reverse().find(m => m.role === 'user');
       const files = await selectContext(index, lastUser?.content ?? '');
       if (files.length) {
         full.push({

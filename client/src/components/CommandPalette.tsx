@@ -40,6 +40,8 @@ export function CommandPalette() {
     { label: '> Run verification (typecheck/lint/test/build)', run: () => { set('bottomVisible', true); set('bottomTab', 'verify'); } },
     { label: '> Open Tasks panel', run: () => { set('bottomVisible', true); set('bottomTab', 'tasks'); } },
     { label: '> Open Change History / Checkpoints', run: () => set('sidePanel', 'history') },
+    { label: '> Open Project Memory', run: () => set('sidePanel', 'memory') },
+    { label: '> Show Project Graph', run: () => set('graphOpen', true) },
     { label: '> Toggle auto-verify after agent edits', run: () => void updateSettings({ autoVerify: !settings?.autoVerify }) },
   ], [settings, set, updateSettings]);
 

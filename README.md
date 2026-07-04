@@ -24,6 +24,8 @@ line of it belongs to you.
 | **Terminal** | Real integrated shell (bottom panel) |
 | **Git** | Status, stage, commit, diff, log, reset — via your system git |
 | **Project intelligence** | Async, incremental, symbol- and import-graph-aware index kept live by a background watcher; automatic framework detection (React, Next.js, Vue, Laravel, WordPress themes & plugins, Tailwind, Docker…); retrieval finds code by what it *does*, not just filename matches |
+| **Project memory** | Local, per-project, editable memory of architecture, conventions, preferences, important files, known bugs, and prior fixes. The agent plans *with* it and appends to it after successful tasks — relevance-filtered, never dumped wholesale, safe to reset |
+| **Visual graphs** | On-demand dependency, component, route, and WordPress-hook graphs drawn from the live index (no duplicate parsing); click a node to open the file |
 | **Beginner mode** | One toggle and the AI explains everything in plain language, assumes zero programming knowledge, and describes each change before making it |
 | **Extensibility** | Plugin system (server routes, commands, new AI provider kinds, swappable retrieval strategy), documented architecture, clear extension APIs |
 

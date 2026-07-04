@@ -119,6 +119,7 @@ input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); }
 .msg.plan { background: var(--accent-dim); border: 1px solid var(--accent); border-radius: 8px; }
 .msg.summary { background: var(--bg); border: 1px solid var(--accent); border-radius: 8px; }
 .plan-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); margin-bottom: 4px; }
+.mem-section { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-dim); margin: 8px 0 3px; }
 .msg pre { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; overflow-x: auto; font-family: var(--font-mono); font-size: 12px; }
 .msg code { font-family: var(--font-mono); font-size: 12px; }
 .msg p { margin: 4px 0; }

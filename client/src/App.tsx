@@ -9,6 +9,7 @@ import { AIPanel } from './components/AIPanel';
 import { StatusBar } from './components/StatusBar';
 import { CommandPalette } from './components/CommandPalette';
 import { SettingsModal } from './components/SettingsModal';
+import { GraphView } from './components/GraphView';
 
 export function App() {
   const init = useStore(s => s.init);
@@ -16,6 +17,7 @@ export function App() {
   const set = useStore(s => s.set);
   const paletteOpen = useStore(s => s.paletteOpen);
   const settingsOpen = useStore(s => s.settingsOpen);
+  const graphOpen = useStore(s => s.graphOpen);
   const bottomVisible = useStore(s => s.bottomVisible);
   const aiVisible = useStore(s => s.aiVisible);
 
@@ -29,6 +31,14 @@ export function App() {
       else if (mod && e.key === 'j') { e.preventDefault(); set('bottomVisible', !useStore.getState().bottomVisible); }
       else if (mod && e.key === 'l') { e.preventDefault(); set('aiVisible', !useStore.getState().aiVisible); }
       else if (mod && e.key === ',') { e.preventDefault(); set('settingsOpen', true); }
+      else if (mod && e.shiftKey && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); set('graphOpen', !useStore.getState().graphOpen); }
+      else if (e.key === 'Escape') {
+        // Close whichever overlay is open (graph/settings/palette), topmost-first.
+        const s = useStore.getState();
+        if (s.graphOpen) set('graphOpen', false);
+        else if (s.settingsOpen) set('settingsOpen', false);
+        else if (s.paletteOpen) set('paletteOpen', false);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -49,6 +59,7 @@ export function App() {
       <StatusBar />
       {paletteOpen && <CommandPalette />}
       {settingsOpen && <SettingsModal />}
+      {graphOpen && <GraphView />}
     </div>
   );
 }

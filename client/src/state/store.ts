@@ -21,7 +21,7 @@ export interface Settings {
   approvals: { fileDelete: boolean; terminalExec: boolean; gitReset: boolean; dependencyInstall: boolean };
 }
 
-export type SidePanel = 'explorer' | 'search' | 'git' | 'history';
+export type SidePanel = 'explorer' | 'search' | 'git' | 'history' | 'memory';
 export type BottomTab = 'terminal' | 'output' | 'problems' | 'verify' | 'tasks';
 export type VerifyStatus = 'idle' | 'running' | 'pass' | 'fail';
 
@@ -40,6 +40,7 @@ interface AppState {
   treeVersion: number;   // bump to make the explorer refresh
   verifyStatus: VerifyStatus;
   runningTaskCount: number;
+  graphOpen: boolean;
 
   init(): Promise<void>;
   openFile(path: string): Promise<void>;
@@ -68,6 +69,7 @@ export const useStore = create<AppState>((set, get) => ({
   treeVersion: 0,
   verifyStatus: 'idle',
   runningTaskCount: 0,
+  graphOpen: false,
 
   async init() {
     const [ws, s] = await Promise.all([

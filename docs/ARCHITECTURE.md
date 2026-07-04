@@ -59,8 +59,9 @@ server/src/
   util/atomic.ts      writeFileAtomic() + withLock() — crash-safe writes
   verify/             detect.ts (typecheck/lint/test/build script detection),
                       runner.ts (cancellable, timeout-safe step execution)
+  memory/             memory.ts — local, per-project, relevance-filtered memory
   routes/             one file per REST area: fs, search, git, ai, index,
-                      conversations, settings, verify, tasks
+                      conversations, settings, verify, tasks, memory, graph
   providers/          the AI backend layer (see below)
   agent/              protocol.ts (plan + action parsing), tools.ts (execution,
                       undo history, checkpoints), summary.ts (final-summary
@@ -73,6 +74,7 @@ server/src/
                       manager.ts (per-workspace index lifecycle),
                       retrieval.ts (symbol/graph-aware context selection),
                       search.ts (non-blocking content search),
+                      graph.ts (visual graphs derived from the index),
                       detect.ts (framework detection)
 
 client/src/
@@ -82,7 +84,7 @@ client/src/
   state/store.ts      zustand store: tabs, settings, panels, verify/task status
   components/         one file per UI region (Explorer, EditorArea, AIPanel,
                       TerminalView, GitPanel, VerifyPanel, TasksPanel,
-                      HistoryPanel, SettingsModal, …)
+                      HistoryPanel, MemoryPanel, GraphView, SettingsModal, …)
 ```
 
 ## The provider layer
@@ -263,6 +265,58 @@ reliably" requirements:
 Both share `util/proc.ts`'s `killTree()` — one implementation of "kill this
 process and everything it spawned," used by verification, tasks, and the
 agent's `run_command`, instead of three slightly-different copies.
+
+## Project memory
+
+`memory/memory.ts` is the IDE's long-term, per-project understanding: a plain
+JSON file under the data dir keyed by a hash of the workspace path. It holds
+architecture notes, conventions, preferences, important files, known bugs,
+agent-recorded prior fixes, and decisions, plus an auto-refreshed detection
+snapshot. It is **local-only, inspectable, editable** (the Memory panel is a
+direct editor over it), **project-specific**, and **safe to reset**.
+
+The load-bearing rule is that memory is **never dumped wholesale into a
+prompt**. `memoryContext(mem, query, touchedFiles)` builds the block that goes
+to a model, and it relevance-filters every unbounded list: a prior fix, known
+bug, important file, or decision is included only if its text overlaps the
+query (stopword-filtered, so "the"/"fix"/"change" don't cause spurious
+matches) or it involves a file the task is touching. Only the small, global
+guidance fields — architecture, conventions, preferences — are always
+included when set, because that is the entire point of them.
+
+Integration:
+- **Agent plans with memory** — the relevant slice is appended to the agent's
+  system prompt (`agent/agent.ts`) and the chat system prompt
+  (`routes/aiRoutes.ts`).
+- **Agent updates memory after a run** — `recordAgentRun()` appends a prior
+  fix (task summary + files) after any run that changed files; a verification
+  failure that was healed and then passed is also recorded as a resolved
+  known-bug, so "self-healing results are saved into memory when useful."
+- **Retrieval is unchanged** — memory is guidance; the file *content* the
+  agent reads still comes from the symbol/import-graph retriever.
+
+## Visual project graphs
+
+`intelligence/graph.ts` reshapes what the index already knows (files, symbols,
+in/out import edges) into node/edge graphs — it adds **no** new parsing or
+walking, so the graph is always consistent with retrieval and stays live via
+the same watcher. Graph types: `imports` (file dependency graph, nodes tagged
+component/route/hook/file by their strongest symbol), `components`, `routes`,
+`hooks` (symbol nodes linked to their defining file), and `focus` (one file
+plus its direct graph neighbours). Node count is capped (keeping the most
+connected nodes) so graphs stay readable and the client-side layout stays
+fast. `availableGraphs()` reports which types actually have data, so the UI
+only offers real tabs.
+
+The client (`components/GraphView.tsx`) runs a small dependency-free,
+deterministically-seeded force-directed layout for a fixed number of
+iterations and renders static SVG — no animation loop, nothing to leak — with
+draggable nodes, wheel zoom, and click-to-open-file.
+
+*Limitation:* the symbol extractor is line-based, so multiple routes/hooks
+declared on a single source line surface only the first. Real code is
+one-per-line; this is the same heuristic tradeoff documented for the index.
+Data-flow graphs beyond the import/dependency graph are not attempted.
 
 ## Extension points (stable surfaces)
 
