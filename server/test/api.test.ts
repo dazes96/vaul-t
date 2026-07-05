@@ -112,6 +112,41 @@ describe('settings API', () => {
   });
 });
 
+describe('smart search API', () => {
+  it('ranks files by relevance with a human-readable reason', async () => {
+    const res = await request(await app()).get('/api/search/smart').query({ q: 'answer' });
+    expect(res.status).toBe(200);
+    // src/app.ts defines `answer` — should rank and explain why.
+    const hit = res.body.results.find((r: { path: string }) => r.path === 'src/app.ts');
+    expect(hit).toBeTruthy();
+    expect(typeof hit.reason).toBe('string');
+    expect(hit.reason.length).toBeGreaterThan(0);
+  });
+
+  it('surfaces only recency (never spurious symbol/path/content matches) for a nonsense query', async () => {
+    const res = await request(await app()).get('/api/search/smart').query({ q: 'zzqqxx_nothing_matches' });
+    // The precision fix: a query that matches nothing must not pull in files via
+    // symbol/path/content signals. Any results present are recency-only.
+    for (const r of res.body.results) {
+      expect(r.reason).toBe('recently edited');
+    }
+  });
+});
+
+describe('inline edit error handling', () => {
+  it('returns a clean error (not a crash) when the provider is unreachable', async () => {
+    const a = await app();
+    // Default provider is ollama at localhost:11434 (not running in tests).
+    await request(a).post('/api/settings').send({ activeProvider: 'ollama' });
+    const res = await request(a).post('/api/ai/edit')
+      .send({ path: 'src/app.ts', selection: 'const answer = 42;', instruction: 'add a type' });
+    // Either a 500 JSON error (failed before streaming) or an SSE error event —
+    // both are clean, and crucially the server process is still alive for the
+    // assertions in later tests to run at all.
+    expect([200, 500]).toContain(res.status);
+  });
+});
+
 describe('AI chat error handling', () => {
   it('returns a clean 500 (not a crash) when the active provider is misconfigured', async () => {
     const a = await app();

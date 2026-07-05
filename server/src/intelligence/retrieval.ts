@@ -28,71 +28,100 @@ export interface Retriever {
 
 const PER_FILE_MAX = 14_000;
 
+export interface RankedFile { path: string; score: number; reason: ContextFile['reason'] }
+
+/**
+ * Rank the workspace's files by relevance to a natural-language query, using
+ * every signal the index carries: defined symbols (strongest), recent-edit
+ * memory, path/filename terms, a content-search fallback for string literals,
+ * and import-graph proximity. Shared by both AI context selection and the
+ * natural-language codebase search so they stay consistent.
+ */
+export async function rankFiles(index: ProjectIndex, query: string): Promise<RankedFile[]> {
+  const tokens = tokenize(query);
+  const scores = new Map<string, { score: number; reason: ContextFile['reason'] }>();
+
+  const bump = (p: string, by: number, reason: ContextFile['reason']) => {
+    const cur = scores.get(p);
+    if (!cur) scores.set(p, { score: by, reason });
+    else cur.score += by;
+  };
+
+  // 1. Symbol matches — the strongest signal: finds the file that DEFINES
+  //    something the query names, regardless of what the file is called.
+  for (const t of tokens) {
+    for (const p of index.symbolLookup(t)) bump(p, 15, 'symbol');
+    for (const e of index.allFiles()) {
+      if (e.symbols.some(s => s.name.toLowerCase().includes(t) && s.name.toLowerCase() !== t)) bump(e.path, 6, 'symbol');
+    }
+  }
+
+  // 2. Recent-edit / recently-opened memory: files you're actively working on
+  //    right now are disproportionately likely to be what an underspecified
+  //    question is about. Scored before the path pass so recency wins the
+  //    displayed "reason" over the path pass's weak universal depth bonus.
+  const recent = index.recentFiles(15);
+  recent.forEach((p, i) => bump(p, Math.max(1, 5 - Math.floor(i / 3)), 'recent'));
+
+  // 3. Path / filename term matches (query-driven — these can introduce files).
+  for (const e of index.allFiles()) {
+    const p = e.path.toLowerCase();
+    const base = p.slice(p.lastIndexOf('/') + 1);
+    for (const t of tokens) {
+      if (base.includes(t)) bump(e.path, 8, 'path');
+      else if (p.includes(t)) bump(e.path, 5, 'path');
+    }
+  }
+
+  // 3b. Structural bonuses are TIE-BREAKERS only: applied to files that already
+  //     have a query signal, never to introduce an unmatched file. Without this
+  //     guard the shallow-depth bonus would surface random top-level files for
+  //     a query that matches nothing.
+  for (const [p, v] of scores) {
+    if (/(^|\/)(readme|index|main|app|package\.json|composer\.json)/.test(p)) v.score += 2;
+    v.score += Math.max(0, 3 - p.split('/').length);
+  }
+
+  let ranked = [...scores.entries()]
+    .filter(([, v]) => v.score > 0)
+    .sort((a, b) => b[1].score - a[1].score)
+    .map(([p, v]) => ({ path: p, ...v }));
+
+  // 4. Content-search fallback when symbol/path/recency signals are weak
+  //    (e.g. the query is a string literal or comment, not an identifier).
+  //    Search per-token, not the joined string — an identifier like
+  //    EMERALD_SPECIAL_FLAG tokenizes to "emerald"/"special"/"flag" and would
+  //    never match the space-joined phrase, only the individual pieces.
+  if (ranked.filter(r => r.score >= 8).length < 3 && tokens.length) {
+    const seen = new Set(ranked.map(r => r.path));
+    for (const t of tokens.slice(0, 4)) {
+      const hits = await searchAsync(index, t, 20);
+      for (const h of hits) {
+        if (seen.has(h.path)) continue;
+        seen.add(h.path);
+        ranked.push({ path: h.path, score: 4, reason: 'content' });
+      }
+    }
+  }
+
+  // 5. Graph expansion: bring in files directly related to the top hits.
+  const top = ranked.slice(0, 6).map(r => r.path);
+  const present = new Set(ranked.map(r => r.path));
+  for (const p of top) {
+    for (const nb of index.neighbours(p)) {
+      if (!present.has(nb)) { ranked.push({ path: nb, score: 3, reason: 'related' }); present.add(nb); }
+    }
+  }
+
+  ranked.sort((a, b) => b.score - a.score);
+  return ranked;
+}
+
 export class HeuristicRetriever implements Retriever {
   async selectContext(index: ProjectIndex, query: string, budgetBytes = 64_000): Promise<ContextFile[]> {
-    const tokens = tokenize(query);
-    const scores = new Map<string, { score: number; reason: ContextFile['reason'] }>();
+    const ranked = await rankFiles(index, query);
 
-    const bump = (p: string, by: number, reason: ContextFile['reason']) => {
-      const cur = scores.get(p);
-      if (!cur) scores.set(p, { score: by, reason });
-      else cur.score += by;
-    };
-
-    // 1. Symbol matches — the strongest signal: finds the file that DEFINES
-    //    something the query names, regardless of what the file is called.
-    for (const t of tokens) {
-      for (const p of index.symbolLookup(t)) bump(p, 15, 'symbol');
-      for (const e of index.allFiles()) {
-        if (e.symbols.some(s => s.name.toLowerCase().includes(t) && s.name.toLowerCase() !== t)) bump(e.path, 6, 'symbol');
-      }
-    }
-
-    // 2. Recent-edit / recently-opened memory: files you're actively working
-    //    on right now are disproportionately likely to be what "this",
-    //    "it", or an underspecified question is actually about. Scored
-    //    before the path pass so recency — a real signal — wins the
-    //    displayed "reason" over the path pass's weak universal depth bonus.
-    const recent = index.recentFiles(15);
-    recent.forEach((p, i) => bump(p, Math.max(1, 5 - Math.floor(i / 3)), 'recent'));
-
-    // 3. Path / filename terms + structural bonuses.
-    for (const e of index.allFiles()) {
-      const p = e.path.toLowerCase();
-      const base = p.slice(p.lastIndexOf('/') + 1);
-      for (const t of tokens) {
-        if (base.includes(t)) bump(e.path, 8, 'path');
-        else if (p.includes(t)) bump(e.path, 5, 'path');
-      }
-      if (/(^|\/)(readme|index|main|app|package\.json|composer\.json)/.test(p)) bump(e.path, 2, 'path');
-      bump(e.path, Math.max(0, 3 - e.path.split('/').length), 'path');
-    }
-
-    let ranked = [...scores.entries()]
-      .filter(([, v]) => v.score > 0)
-      .sort((a, b) => b[1].score - a[1].score)
-      .map(([p, v]) => ({ path: p, ...v }));
-
-    // 4. Content-search fallback when symbol/path/recency signals are weak
-    //    (e.g. the query is a string literal or comment, not an identifier).
-    if (ranked.filter(r => r.score >= 8).length < 3 && tokens.length) {
-      const hits = await searchAsync(index, tokens.join(' '), 40);
-      const seen = new Set(ranked.map(r => r.path));
-      for (const h of hits) if (!seen.has(h.path)) { ranked.push({ path: h.path, score: 4, reason: 'content' }); seen.add(h.path); }
-    }
-
-    // 5. Graph expansion: bring in files directly related to the top hits.
-    const top = ranked.slice(0, 6).map(r => r.path);
-    const present = new Set(ranked.map(r => r.path));
-    for (const p of top) {
-      for (const nb of index.neighbours(p)) {
-        if (!present.has(nb)) { ranked.push({ path: nb, score: 3, reason: 'related' }); present.add(nb); }
-      }
-    }
-
-    ranked.sort((a, b) => b.score - a.score);
-
-    // 6. Read contents within budget; big files -> outline instead of full text.
+    // Read contents within budget; big files -> outline instead of full text.
     const out: ContextFile[] = [];
     let used = 0;
     for (const r of ranked) {

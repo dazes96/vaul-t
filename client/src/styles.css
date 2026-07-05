@@ -122,6 +122,12 @@ input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); }
 .mem-section { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-dim); margin: 8px 0 3px; }
 .startup-gate { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: var(--bg); color: var(--fg); }
 .startup-gate .logo { font-size: 44px; }
+
+/* Inline edit (Ctrl+K) overlay at the top of the editor */
+.inline-edit { position: absolute; top: 0; left: 0; right: 0; z-index: 20; background: var(--bg-panel); border-bottom: 1px solid var(--border); box-shadow: 0 6px 16px #0004; }
+.inline-edit-bar { display: flex; align-items: center; gap: 6px; padding: 6px 10px; }
+.inline-edit-bar input { flex: 1; }
+.inline-edit-diff { height: 260px; border-top: 1px solid var(--border); }
 .msg pre { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; overflow-x: auto; font-family: var(--font-mono); font-size: 12px; }
 .msg code { font-family: var(--font-mono); font-size: 12px; }
 .msg p { margin: 4px 0; }
