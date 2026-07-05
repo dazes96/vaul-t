@@ -243,6 +243,26 @@ flowchart TB
 - **Search** (`search.ts`): reads candidate files from the index with bounded
   concurrency via `fs/promises` — non-blocking, and no re-walk of the tree.
 
+## Specialist agents
+
+`agent/specialists.ts` is a thin **role layer** over the single agent loop —
+not a swarm, not separate processes. A role only (a) appends a focused
+instruction block to the agent's system prompt and (b) declares whether it may
+modify files. Everything else — planning, approval, diffs, checkpoints,
+verification, cancellation, memory — is the same shared machinery, so a role
+can never bypass a safety system.
+
+The eight roles: **Coder** and **Documentation** write (always via the normal
+preview→approve→undoable→verify path); **Planner, Architect, Reviewer,
+Security, Performance, Testing** are read-only and produce findings. The
+read-only guarantee is enforced in the loop, not just the prompt: if a
+non-writing role emits `write_file`/`delete_file`/`run_command`
+(`DESTRUCTIVE_TOOLS`), `agent.ts` refuses it and returns a result telling the
+model to report findings instead — so a review role physically cannot edit,
+whatever the model does. The client picks a role in Agent mode and sends it in
+the `start` message; `GET /api/agent/roles` serves the list so the UI never
+drifts from the server.
+
 ## Verification and tasks
 
 Two small subsystems back the "make the project green" and "run things

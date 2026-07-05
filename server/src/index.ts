@@ -16,6 +16,7 @@ import { verifyRoutes } from './routes/verifyRoutes.js';
 import { taskRoutes } from './routes/taskRoutes.js';
 import { memoryRoutes } from './routes/memoryRoutes.js';
 import { graphRoutes } from './routes/graphRoutes.js';
+import { agentRoutes } from './routes/agentRoutes.js';
 import { handleTerminalSocket } from './terminal.js';
 import { handleAgentSocket } from './agent/agent.js';
 import { loadPlugins, type LoadedPlugin } from './plugins.js';
@@ -58,6 +59,7 @@ export function createApp(): express.Express {
   app.use('/api/tasks', taskRoutes(getWorkspace));
   app.use('/api/memory', memoryRoutes(getWorkspace));
   app.use('/api/graph', graphRoutes(getWorkspace));
+  app.use('/api/agent', agentRoutes());
 
   app.get('/api/workspace', (_req, res) => {
     res.json({ workspace, recent: loadSettings().recentWorkspaces });

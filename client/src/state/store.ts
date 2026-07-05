@@ -54,15 +54,27 @@ interface AppState {
   refreshTree(): void;
 }
 
+// Persist a few layout preferences across reloads so the IDE reopens the way
+// you left it. Only cheap UI toggles — never file contents or workspace state.
+const UI_KEY = 'emerald.ui';
+type UiPrefs = { sidePanel: SidePanel; bottomVisible: boolean; aiVisible: boolean; bottomTab: BottomTab };
+function loadUiPrefs(): Partial<UiPrefs> {
+  try { return JSON.parse(localStorage.getItem(UI_KEY) || '{}'); } catch { return {}; }
+}
+function saveUiPrefs(p: Partial<UiPrefs>): void {
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ ...loadUiPrefs(), ...p })); } catch { /* storage disabled */ }
+}
+const savedUi = loadUiPrefs();
+
 export const useStore = create<AppState>((set, get) => ({
   workspace: '',
   settings: null,
   tabs: [],
   activePath: null,
-  sidePanel: 'explorer',
-  bottomTab: 'terminal',
-  bottomVisible: true,
-  aiVisible: true,
+  sidePanel: savedUi.sidePanel ?? 'explorer',
+  bottomTab: savedUi.bottomTab ?? 'terminal',
+  bottomVisible: savedUi.bottomVisible ?? true,
+  aiVisible: savedUi.aiVisible ?? true,
   paletteOpen: false,
   settingsOpen: false,
   output: [],
@@ -110,7 +122,13 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setActive(path: string) { set({ activePath: path }); },
-  set(key, value) { set({ [key]: value } as Pick<AppState, typeof key>); },
+  set(key, value) {
+    set({ [key]: value } as Pick<AppState, typeof key>);
+    // Mirror layout toggles to localStorage so they survive a reload.
+    if (key === 'sidePanel' || key === 'bottomVisible' || key === 'aiVisible' || key === 'bottomTab') {
+      saveUiPrefs({ [key]: value } as Partial<UiPrefs>);
+    }
+  },
 
   async updateSettings(patch) {
     const settings = { ...get().settings!, ...patch };

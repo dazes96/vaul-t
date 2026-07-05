@@ -85,11 +85,16 @@ export function GraphView() {
   useEffect(() => { void apiGet<{ available: GraphType[] }>('/api/graph/available').then(r => setAvailable(r.available)); }, []);
 
   useEffect(() => {
-    void apiGet<Graph>(`/api/graph?type=${type}`).then((g) => {
+    let live = true;
+    setGraph(null);   // show the loading state while the new type is fetched
+    setNodes([]);
+    apiGet<Graph>(`/api/graph?type=${type}`).then((g) => {
+      if (!live) return;
       setGraph(g);
       setNodes(layout(g.nodes, g.edges, W, H));
       setView({ scale: 1, tx: 0, ty: 0 });
-    });
+    }).catch(() => { if (live) setGraph({ type, nodes: [], edges: [], truncated: false, note: 'Could not build the graph (is the index ready?).' }); });
+    return () => { live = false; };
   }, [type]);
 
   const posById = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
@@ -129,7 +134,13 @@ export function GraphView() {
           </span>
         </header>
         <div className="modal-body" style={{ padding: 0, position: 'relative' }}>
+          {!graph && <div style={{ padding: 16, color: 'var(--fg-dim)' }}>Building graph…</div>}
           {graph?.note && <div style={{ padding: 16, color: 'var(--fg-dim)' }}>{graph.note}</div>}
+          {graph && graph.nodes.length === 0 && !graph.note && (
+            <div style={{ padding: 16, color: 'var(--fg-dim)' }}>
+              Nothing to graph yet — this project has no indexed {LABELS[type].toLowerCase()} relationships.
+            </div>
+          )}
           {graph && graph.nodes.length > 0 && (
             <svg
               width="100%" height={H} viewBox={`0 0 ${W} ${H}`}

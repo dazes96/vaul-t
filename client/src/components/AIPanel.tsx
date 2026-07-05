@@ -25,8 +25,12 @@ function Markdown({ text }: { text: string }) {
   return <div dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
+interface Role { id: string; label: string; description: string; writes: boolean }
+
 export function AIPanel() {
   const [mode, setMode] = useState<Mode>('chat');
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [role, setRole] = useState('coder');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<DisplayMsg[]>([]);
   const [busy, setBusy] = useState(false);
@@ -50,6 +54,10 @@ export function AIPanel() {
     if (workspace) void loadConversationList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace]);
+
+  useEffect(() => {
+    void apiGet<{ roles: Role[] }>('/api/agent/roles').then(r => setRoles(r.roles)).catch(() => setRoles([]));
+  }, []);
 
   async function loadConversationList() {
     setConversations(await apiGet(`/api/conversations?workspace=${encodeURIComponent(workspace)}`));
@@ -125,10 +133,14 @@ export function AIPanel() {
 
       const flush = () => setMessages([...current, ...(streaming ? [{ role: 'assistant' as const, content: streaming }] : [])]);
 
-      ws.onopen = () => ws.send(JSON.stringify({ type: 'start', task, history: history() }));
+      ws.onopen = () => ws.send(JSON.stringify({ type: 'start', task, history: history(), role }));
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
         switch (msg.type) {
+          case 'role':
+            current = [...current, { role: 'event', content: `🧭 ${msg.label} specialist${msg.writes ? '' : ' (read-only — findings only)'}` }];
+            flush();
+            break;
           case 'text':
             streaming += msg.delta;
             flush();
@@ -233,6 +245,15 @@ export function AIPanel() {
           <option value="review">Review</option>
           <option value="docs">Docs</option>
         </select>
+        {mode === 'agent' && roles.length > 0 && (
+          <select
+            value={role}
+            onChange={e => setRole(e.target.value)}
+            title={roles.find(r => r.id === role)?.description ?? 'Specialist role'}
+          >
+            {roles.map(r => <option key={r.id} value={r.id}>{r.label}{r.writes ? '' : ' (findings)'}</option>)}
+          </select>
+        )}
         <select
           value={convId ?? ''}
           onChange={e => (e.target.value ? void openConversation(e.target.value) : newConversation())}
@@ -252,8 +273,8 @@ export function AIPanel() {
         {messages.length === 0 && (
           <div style={{ color: 'var(--fg-dim)', fontSize: 12.5, lineHeight: 1.6 }}>
             <b>Chat</b> — ask about your code; relevant files are included automatically.<br />
-            <b>Agent</b> — give a task; the AI plans, edits files, and runs commands with your approval.<br />
-            <b>Explain / Review / Docs</b> — focused modes for understanding, reviewing, and documenting.
+            <b>Agent</b> — give a task; the AI plans, edits files, and runs commands with your approval. Pick a <b>specialist</b>: Coder edits; Planner, Architect, Reviewer, Security, Performance, and Testing produce findings without touching files; Documentation edits docs with approval.<br />
+            <b>Explain / Review / Docs</b> — focused chat modes for understanding, reviewing, and documenting.
           </div>
         )}
         {messages.map((m, i) => {

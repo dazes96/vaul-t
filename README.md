@@ -17,6 +17,7 @@ line of it belongs to you.
 | **Editor** | Monaco (the VS Code editor engine), tabs, themes (dark/light), search & replace across files, markdown preview, image viewer, JSON viewer, command palette (Ctrl+P) |
 | **AI Chat** | Chat with your whole codebase — relevant files are selected and included automatically. Modes: Chat, Explain (beginner-friendly), Review, Docs |
 | **AI Agent** | Plans before it acts (shown to you as a plan card), edits multiple files, runs commands. Every write shows an **editable diff** you approve, reject, or modify; every run is **undoable as one checkpoint** from Change History |
+| **Specialist roles** | Eight focused agent roles: **Coder** and **Documentation** make changes (with approval); **Planner, Architect, Reviewer, Security, Performance, Testing** are read-only and produce findings — they physically can't edit, enforced server-side |
 | **Self-healing** | After the agent changes files, it automatically typechecks/lints/tests/builds and hands failures back to itself to fix — bounded by a setting you control, never unattended forever |
 | **Cancellation** | Stop actually stops: a running verification step or terminal command is killed within seconds, not left to time out |
 | **Tasks** | Dev servers and watch builds as trackable, stoppable/restartable processes with live logs — distinct from the terminal, never orphaned |

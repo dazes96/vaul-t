@@ -9,6 +9,7 @@ import { detectVerifySteps } from '../verify/detect.js';
 import { runVerification, type VerifyStepResult } from '../verify/runner.js';
 import { buildRunSummary } from './summary.js';
 import { loadMemory, memoryContext, recordAgentRun } from '../memory/memory.js';
+import { getSpecialist } from './specialists.js';
 
 interface Approval {
   approved: boolean;
@@ -60,7 +61,7 @@ export function handleAgentSocket(ws: WebSocket, workspace: string): void {
     if (msg.type === 'start') {
       cancelled = false;
       try {
-        await runAgent(String(msg.task), (msg.history as ChatMessage[] | undefined) ?? []);
+        await runAgent(String(msg.task), (msg.history as ChatMessage[] | undefined) ?? [], msg.role as string | undefined);
       } catch (err) {
         send({ type: 'error', message: (err as Error).message });
       }
@@ -80,15 +81,18 @@ export function handleAgentSocket(ws: WebSocket, workspace: string): void {
     return new Promise((resolve) => pendingApprovals.set(id, resolve));
   }
 
-  async function runAgent(task: string, priorHistory: ChatMessage[]): Promise<void> {
+  async function runAgent(task: string, priorHistory: ChatMessage[], roleId?: string): Promise<void> {
     const settings = loadSettings();
     const provider = buildProvider(settings);
     const index = await getIndex(workspace);
+    const specialist = getSpecialist(roleId);
+    send({ type: 'role', id: specialist.id, label: specialist.label, writes: specialist.writes });
     // Project memory, relevance-filtered to this task, is given to the agent so
     // it plans WITH what the IDE already knows about the project (architecture,
     // conventions, prior fixes) instead of rediscovering it every time.
     const memBlock = memoryContext(loadMemory(workspace), task);
     const systemContent = agentSystemPrompt(index.map, settings.beginnerMode)
+      + `\n\n${specialist.prompt}`
       + (memBlock ? `\n\n${memBlock}` : '');
     const messages: ChatMessage[] = [
       { role: 'system', content: systemContent },
@@ -137,7 +141,13 @@ export function handleAgentSocket(ws: WebSocket, workspace: string): void {
           send({ type: 'action', action });
 
           let result: ToolResult;
-          if (needsApproval(action, settings.approvals)) {
+          if (!specialist.writes && DESTRUCTIVE_TOOLS.has(action.tool)) {
+            // A read-only specialist tried to modify the project — refuse and
+            // steer it back to producing findings. This is the hard guarantee
+            // that Reviewer/Security/Performance/Testing/Planner/Architect
+            // never silently edit, independent of what the model emits.
+            result = { ok: false, output: `You are in a read-only role and cannot use ${action.tool}. Report your findings as text; the user can switch to the Coder role to apply changes.` };
+          } else if (needsApproval(action, settings.approvals)) {
             const preview = action.tool === 'write_file' ? await previewWrite(action) : undefined;
             const { approved, editedContent } = await requestApproval(action, preview);
             if (cancelled) return 'cancelled';
