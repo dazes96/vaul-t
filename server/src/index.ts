@@ -87,6 +87,16 @@ export function createApp(): express.Express {
 }
 
 async function main() {
+  // Safety net: Node kills the process on an unhandled promise rejection, and
+  // Express 4 does not catch rejections from async route handlers. One bad
+  // request (a misconfigured provider, a transient failure) must never take
+  // down the whole IDE server, so we log and keep serving. Individual handlers
+  // still catch their own errors to return a clean response; this is the last
+  // line of defense for anything that slips through.
+  process.on('unhandledRejection', (reason) => {
+    console.error('[emerald] unhandled promise rejection (server kept alive):', reason);
+  });
+
   const app = createApp();
 
   let plugins: LoadedPlugin[] = [];

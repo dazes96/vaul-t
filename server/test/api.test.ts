@@ -111,3 +111,22 @@ describe('settings API', () => {
     }
   });
 });
+
+describe('AI chat error handling', () => {
+  it('returns a clean 500 (not a crash) when the active provider is misconfigured', async () => {
+    const a = await app();
+    // Point the active provider at an id that does not exist.
+    await request(a).post('/api/settings').send({
+      activeProvider: 'ghost',
+      providers: [{ id: 'real', kind: 'ollama', baseUrl: 'http://localhost:11434', model: 'x' }],
+    }).expect(200);
+
+    const res = await request(a).post('/api/ai/chat')
+      .send({ messages: [{ role: 'user', content: 'hi' }], includeContext: false });
+    expect(res.status).toBe(500);
+    expect(res.body.error).toMatch(/provider/i);   // actionable message, not a stack/crash
+
+    // Restore a valid active provider (the 'real' one we configured above).
+    await request(a).post('/api/settings').send({ activeProvider: 'real' }).expect(200);
+  });
+});

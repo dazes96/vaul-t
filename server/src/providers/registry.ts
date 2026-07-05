@@ -23,9 +23,12 @@ export function registerProviderKind(kind: string, factory: Factory): void {
 export function buildProvider(settings: Settings, providerId?: string): Provider {
   const id = providerId || settings.activeProvider;
   const cfg = settings.providers.find(p => p.id === id);
-  if (!cfg) throw new Error(`Unknown provider: ${id}`);
+  if (!cfg) {
+    const available = settings.providers.map(p => p.id).join(', ') || 'none configured';
+    throw new Error(`No AI provider "${id || '(unset)'}" — open Settings and pick an active provider. Configured: ${available}.`);
+  }
   const factory = factories[cfg.kind];
-  if (!factory) throw new Error(`Unknown provider kind: ${cfg.kind}`);
+  if (!factory) throw new Error(`Provider "${cfg.id}" has an unknown kind "${cfg.kind}". Fix it in Settings (kinds: ollama, openai-compatible, anthropic, gemini).`);
   const apiKey = cfg.apiKeyRef ? getSecret(cfg.apiKeyRef) : undefined;
   return factory(cfg, apiKey);
 }

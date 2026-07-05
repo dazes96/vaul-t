@@ -28,47 +28,56 @@ export function aiRoutes(getWorkspace: () => string): Router {
    * Body: { messages, mode?, includeContext?, contextQuery?, providerId? }
    */
   r.post('/chat', async (req, res) => {
-    const { messages, mode = 'chat', includeContext = true, providerId } = req.body as {
-      messages: ChatMessage[]; mode?: string; includeContext?: boolean; providerId?: string;
-    };
-    const settings = loadSettings();
-    const provider = buildProvider(settings, providerId);
-    const index = await getIndex(getWorkspace());
-
-    const lastUser = [...messages].reverse().find(m => m.role === 'user');
-    const memBlock = memoryContext(loadMemory(getWorkspace()), lastUser?.content ?? '');
-    const system: ChatMessage = {
-      role: 'system',
-      content: chatSystemPrompt(index.map, settings.beginnerMode, mode) + (memBlock ? `\n\n${memBlock}` : ''),
-    };
-    const full: ChatMessage[] = [system];
-    if (includeContext && messages.length) {
-      const files = await selectContext(index, lastUser?.content ?? '');
-      if (files.length) {
-        full.push({
-          role: 'user',
-          content: 'Relevant project files for context (selected by symbol, path, and import-graph relevance):\n\n'
-            + files.map(f => `### ${f.path} (${f.reason})\n\`\`\`\n${f.content}\n\`\`\``).join('\n\n'),
-        });
-        full.push({ role: 'assistant', content: 'I have read the project context. What would you like to do?' });
-      }
-    }
-    full.push(...messages);
-
-    res.setHeader('content-type', 'text/event-stream');
-    res.setHeader('cache-control', 'no-cache');
-    res.flushHeaders();
-    const abort = new AbortController();
-    req.on('close', () => abort.abort());
+    // The whole handler is guarded: a failure while BUILDING the request (bad
+    // provider config, index not ready, context read error) must return a clean
+    // error, never crash the server. Express 4 does not catch rejected promises
+    // from async handlers, so an unguarded throw here would take the whole
+    // process down.
     try {
+      const { messages, mode = 'chat', includeContext = true, providerId } = req.body as {
+        messages: ChatMessage[]; mode?: string; includeContext?: boolean; providerId?: string;
+      };
+      const settings = loadSettings();
+      const provider = buildProvider(settings, providerId);
+      const index = await getIndex(getWorkspace());
+
+      const lastUser = [...messages].reverse().find(m => m.role === 'user');
+      const memBlock = memoryContext(loadMemory(getWorkspace()), lastUser?.content ?? '');
+      const system: ChatMessage = {
+        role: 'system',
+        content: chatSystemPrompt(index.map, settings.beginnerMode, mode) + (memBlock ? `\n\n${memBlock}` : ''),
+      };
+      const full: ChatMessage[] = [system];
+      if (includeContext && messages.length) {
+        const files = await selectContext(index, lastUser?.content ?? '');
+        if (files.length) {
+          full.push({
+            role: 'user',
+            content: 'Relevant project files for context (selected by symbol, path, and import-graph relevance):\n\n'
+              + files.map(f => `### ${f.path} (${f.reason})\n\`\`\`\n${f.content}\n\`\`\``).join('\n\n'),
+          });
+          full.push({ role: 'assistant', content: 'I have read the project context. What would you like to do?' });
+        }
+      }
+      full.push(...messages);
+
+      res.setHeader('content-type', 'text/event-stream');
+      res.setHeader('cache-control', 'no-cache');
+      res.flushHeaders();
+      const abort = new AbortController();
+      req.on('close', () => abort.abort());
       for await (const delta of provider.streamChat(full, { signal: abort.signal })) {
         res.write(`data: ${JSON.stringify({ delta })}\n\n`);
       }
       res.write('data: {"done":true}\n\n');
+      res.end();
     } catch (err) {
-      res.write(`data: ${JSON.stringify({ error: (err as Error).message })}\n\n`);
+      const message = (err as Error).message;
+      // If streaming already started, deliver the error in-band; otherwise send
+      // a normal JSON error the client surfaces to the user.
+      if (res.headersSent) { res.write(`data: ${JSON.stringify({ error: message })}\n\n`); res.end(); }
+      else res.status(500).json({ error: message });
     }
-    res.end();
   });
 
   /** POST /api/ai/complete — inline autocomplete. Body: { prefix, suffix } */

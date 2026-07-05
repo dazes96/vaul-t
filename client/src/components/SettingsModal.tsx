@@ -23,7 +23,14 @@ export function SettingsModal() {
 
   const saveProviders = async (next: ProviderCfg[]) => {
     setProviders(next);
-    await updateSettings({ providers: next as Settings['providers'] });
+    // Never let activeProvider dangle: if the current active provider was
+    // removed, point it at the first remaining one so AI requests don't start
+    // failing with an "unknown provider" error.
+    const patch: Partial<Settings> = { providers: next as Settings['providers'] };
+    if (!next.some(p => p.id === settings.activeProvider)) {
+      patch.activeProvider = next[0]?.id ?? '';
+    }
+    await updateSettings(patch);
   };
 
   const fetchModels = async (id: string) => {
