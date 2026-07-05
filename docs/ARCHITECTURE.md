@@ -279,12 +279,17 @@ reliably" requirements:
   the hard backstop regardless.
 - **`tasks.ts`** — long-running processes (dev servers, watch builds) as
   first-class, trackable tasks distinct from the interactive terminal and
-  from one-off agent commands: start/stop/restart, live log streaming (SSE),
-  and killed as a tree on stop *and* on server shutdown (`killAllTasks()`).
+  from one-off agent commands: start/stop/restart/dismiss, live log streaming
+  (SSE), and killed as a tree on stop *and* on server shutdown
+  (`killAllTasks()`). Finished tasks can be dismissed from the list, and are
+  auto-pruned past a cap so the task map can't grow unbounded over a long
+  session.
 
 Both share `util/proc.ts`'s `killTree()` — one implementation of "kill this
-process and everything it spawned," used by verification, tasks, and the
-agent's `run_command`, instead of three slightly-different copies.
+process and everything it spawned," used by verification, tasks, the terminal
+(pipe-fallback shell), and the agent's `run_command`, instead of several
+slightly-different copies. This is why closing a terminal that started a
+long-running process doesn't orphan it.
 
 ## Project memory
 

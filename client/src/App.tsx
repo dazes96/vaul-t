@@ -20,8 +20,19 @@ export function App() {
   const graphOpen = useStore(s => s.graphOpen);
   const bottomVisible = useStore(s => s.bottomVisible);
   const aiVisible = useStore(s => s.aiVisible);
+  const ready = useStore(s => s.ready);
+  const initError = useStore(s => s.initError);
 
-  useEffect(() => { void init(); }, [init]);
+  useEffect(() => {
+    if (ready) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tryInit = () => {
+      void init().catch(() => { if (!cancelled) timer = setTimeout(tryInit, 1500); });
+    };
+    tryInit();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [init, ready]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -44,6 +55,26 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [saveActive, set]);
 
+  if (!ready) {
+    return (
+      <div className="startup-gate">
+        <div className="logo">💎</div>
+        <div><b>Emerald Code Studio</b></div>
+        {initError ? (
+          <>
+            <div style={{ color: 'var(--danger)' }}>Can't reach the Emerald server.</div>
+            <div style={{ color: 'var(--fg-dim)', fontSize: 12.5, maxWidth: 380, textAlign: 'center' }}>
+              Make sure the server is running (<code>npm start</code>). Retrying automatically…
+            </div>
+            <button className="primary" onClick={() => void init().catch(() => {})}>Retry now</button>
+          </>
+        ) : (
+          <div style={{ color: 'var(--fg-dim)' }}>Connecting…</div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <div className="app-main">
@@ -54,7 +85,9 @@ export function App() {
           <EditorArea />
           {bottomVisible && <BottomPanel />}
         </div>
-        {aiVisible && <AIPanel />}
+        {/* Kept mounted (hidden via CSS) so the conversation and any in-flight
+            agent run survive toggling the panel — same pattern as the terminal. */}
+        <div style={{ display: aiVisible ? 'contents' : 'none' }}><AIPanel /></div>
       </div>
       <StatusBar />
       {paletteOpen && <CommandPalette />}

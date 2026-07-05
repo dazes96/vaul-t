@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { startTask, stopTask, restartTask, listTasks, getTaskLog, killAllTasks, detectTasks } from '../src/tasks.js';
+import { startTask, stopTask, restartTask, removeTask, listTasks, getTaskLog, killAllTasks, detectTasks } from '../src/tasks.js';
 
 let dir: string;
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'emerald-tasks-')); });
@@ -54,5 +54,18 @@ describe('task runner', () => {
     fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { dev: 'vite', build: 'vite build' } }));
     const detected = detectTasks(dir);
     expect(detected.map(d => d.name).sort()).toEqual(['build', 'dev']);
+  });
+
+  it('dismisses a finished task but refuses to dismiss a running one', async () => {
+    const running = startTask(dir, 'server', process.execPath, ['-e', 'setInterval(() => {}, 1000);']);
+    expect(removeTask(running.id)).toBe(false);   // running: refused
+    expect(listTasks(dir).some(t => t.id === running.id)).toBe(true);
+
+    const shortLived = startTask(dir, 'quick', process.execPath, ['-e', 'process.exit(0)']);
+    await waitFor(() => listTasks(dir).find(t => t.id === shortLived.id)?.status === 'exited');
+    expect(removeTask(shortLived.id)).toBe(true);  // finished: removed
+    expect(listTasks(dir).some(t => t.id === shortLived.id)).toBe(false);
+
+    stopTask(running.id);
   });
 });

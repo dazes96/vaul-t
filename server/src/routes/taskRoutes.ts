@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { detectTasks, listTasks, startTask, stopTask, restartTask, getTaskLog, subscribeTask } from '../tasks.js';
+import { detectTasks, listTasks, startTask, stopTask, restartTask, removeTask, getTaskLog, subscribeTask } from '../tasks.js';
 
 export function taskRoutes(getWorkspace: () => string): Router {
   const r = Router();
@@ -33,6 +33,11 @@ export function taskRoutes(getWorkspace: () => string): Router {
     const info = restartTask(req.params.id);
     if (!info) return res.status(404).json({ error: 'Task not found' });
     res.json(info);
+  });
+
+  // Dismiss a finished task from the list (running tasks must be stopped first).
+  r.post('/:id/remove', (req, res) => {
+    res.json({ ok: removeTask(req.params.id) });
   });
 
   /** Live log stream: sends the buffered backlog first, then chunks as they arrive. */

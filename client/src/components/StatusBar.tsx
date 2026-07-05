@@ -10,6 +10,7 @@ export function StatusBar() {
   const updateSettings = useStore(s => s.updateSettings);
   const verifyStatus = useStore(s => s.verifyStatus);
   const runningTaskCount = useStore(s => s.runningTaskCount);
+  const statusMessage = useStore(s => s.statusMessage);
   const treeVersion = useStore(s => s.treeVersion);
   const [branch, setBranch] = useState('');
   const [indexStats, setIndexStats] = useState<{ fileCount: number; symbolCount: number } | null>(null);
@@ -35,6 +36,11 @@ export function StatusBar() {
       {indexStats && (
         <span title={`${indexStats.fileCount} files, ${indexStats.symbolCount} symbols indexed — kept live by a background watcher`}>
           🧠 {indexStats.fileCount} files
+        </span>
+      )}
+      {statusMessage && (
+        <span style={{ color: statusMessage.kind === 'error' ? 'var(--danger)' : 'var(--accent)', fontWeight: 500 }}>
+          {statusMessage.kind === 'error' ? '⚠ ' : ''}{statusMessage.text}
         </span>
       )}
       <span className="grow" />

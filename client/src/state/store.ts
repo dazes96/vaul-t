@@ -41,8 +41,12 @@ interface AppState {
   verifyStatus: VerifyStatus;
   runningTaskCount: number;
   graphOpen: boolean;
+  ready: boolean;            // false until the first successful init()
+  initError: string | null;  // set when init() can't reach the server
+  statusMessage: { text: string; kind: 'info' | 'error' } | null;  // transient status-bar flash
 
   init(): Promise<void>;
+  flash(text: string, kind?: 'info' | 'error'): void;
   openFile(path: string): Promise<void>;
   closeTab(path: string): void;
   setContent(path: string, content: string): void;
@@ -65,6 +69,7 @@ function saveUiPrefs(p: Partial<UiPrefs>): void {
   try { localStorage.setItem(UI_KEY, JSON.stringify({ ...loadUiPrefs(), ...p })); } catch { /* storage disabled */ }
 }
 const savedUi = loadUiPrefs();
+let flashTimer: ReturnType<typeof setTimeout>;
 
 export const useStore = create<AppState>((set, get) => ({
   workspace: '',
@@ -82,14 +87,31 @@ export const useStore = create<AppState>((set, get) => ({
   verifyStatus: 'idle',
   runningTaskCount: 0,
   graphOpen: false,
+  ready: false,
+  initError: null,
+  statusMessage: null,
+
+  flash(text, kind = 'info') {
+    set({ statusMessage: { text, kind } });
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => set({ statusMessage: null }), kind === 'error' ? 6000 : 3000);
+  },
 
   async init() {
-    const [ws, s] = await Promise.all([
-      apiGet<{ workspace: string }>('/api/workspace'),
-      apiGet<{ settings: Settings }>('/api/settings'),
-    ]);
-    set({ workspace: ws.workspace, settings: s.settings });
-    document.documentElement.dataset.theme = s.settings.theme === 'light' ? 'light' : 'dark';
+    try {
+      const [ws, s] = await Promise.all([
+        apiGet<{ workspace: string }>('/api/workspace'),
+        apiGet<{ settings: Settings }>('/api/settings'),
+      ]);
+      set({ workspace: ws.workspace, settings: s.settings, ready: true, initError: null });
+      document.documentElement.dataset.theme = s.settings.theme === 'light' ? 'light' : 'dark';
+    } catch (err) {
+      // The server may not be up yet (client loaded first, or a restart is in
+      // flight). Surface a clear message and let App retry instead of leaving a
+      // blank shell.
+      set({ initError: (err as Error).message || 'Cannot reach the Emerald server' });
+      throw err;
+    }
   },
 
   async openFile(path: string) {
@@ -117,8 +139,20 @@ export const useStore = create<AppState>((set, get) => ({
     const { activePath, tabs } = get();
     const tab = tabs.find(t => t.path === activePath);
     if (!tab || tab.kind !== 'text') return;
-    await apiPost('/api/fs/write', { path: tab.path, content: tab.content });
-    set({ tabs: get().tabs.map(t => (t.path === tab.path ? { ...t, savedContent: t.content } : t)) });
+    if (tab.content === tab.savedContent) return;   // nothing to save
+    try {
+      const persisted = tab.content;
+      await apiPost('/api/fs/write', { path: tab.path, content: persisted });
+      // Record exactly the bytes we persisted. If the user kept typing during
+      // the request, the tab's live content differs from `persisted`, so it
+      // stays correctly marked dirty rather than being falsely cleared.
+      set({ tabs: get().tabs.map(t => (t.path === tab.path ? { ...t, savedContent: persisted } : t)) });
+      get().flash(`Saved ${tab.path.split('/').pop()}`);
+    } catch (err) {
+      // Leave the tab dirty (savedContent unchanged) so the unsaved indicator
+      // stays on, and tell the user why — never silently swallow a failed save.
+      get().flash(`Save failed: ${(err as Error).message}`, 'error');
+    }
   },
 
   setActive(path: string) { set({ activePath: path }); },

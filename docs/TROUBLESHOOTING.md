@@ -34,6 +34,23 @@ interactive TUIs (vim, htop) won't. To upgrade:
 npm install node-pty -w server   # needs a C++ toolchain
 ```
 
+## The UI is stuck on "Connecting…"
+
+The client can't reach the Emerald server. It retries automatically every
+couple of seconds (and there's a **Retry now** button), so this usually clears
+on its own once the server finishes starting. If it persists: confirm the
+server is running (`npm start`), that it's on the expected port, and that
+nothing else is bound to it. In dev mode (`npm run dev`) the UI is served by
+Vite on 4621 and proxies the API to the server on 4620 — the "Connecting…"
+screen means the 4620 server isn't up yet.
+
+## A save didn't stick
+
+Emerald shows **"Saved <file>"** in the status bar on a successful save and a
+red **"Save failed: …"** if the write is rejected (e.g. a permission error).
+If a save fails, the tab keeps its unsaved-changes dot — your edits are still
+in the editor, nothing is lost; fix the underlying cause and save again.
+
 ## Port already in use
 
 ```bash

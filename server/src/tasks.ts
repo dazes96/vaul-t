@@ -54,7 +54,24 @@ export function listTasks(workspace: string): TaskInfo[] {
   return [...tasks.values()].filter(t => t.cwd === workspace).map(toInfo);
 }
 
+const MAX_FINISHED = 30;   // cap retained exited/stopped tasks so the map can't grow unbounded
+
+/** Drop the oldest finished tasks once we exceed the cap (running tasks are never pruned). */
+function pruneFinished(): void {
+  const finished = [...tasks.values()].filter(t => t.status !== 'running').sort((a, b) => (a.endedAt ?? 0) - (b.endedAt ?? 0));
+  for (let i = 0; i < finished.length - MAX_FINISHED; i++) tasks.delete(finished[i].id);
+}
+
+/** Remove a finished task from the list. Running tasks must be stopped first. */
+export function removeTask(id: string): boolean {
+  const t = tasks.get(id);
+  if (!t || t.status === 'running') return false;
+  tasks.delete(id);
+  return true;
+}
+
 export function startTask(workspace: string, name: string, command: string, args: string[]): TaskInfo {
+  pruneFinished();
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const child = spawn(command, args, {
     cwd: workspace,

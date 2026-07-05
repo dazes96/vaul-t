@@ -54,6 +54,9 @@ export function TasksPanel() {
   };
   const stop = async (id: string) => { await apiPost(`/api/tasks/${id}/stop`, {}); refresh(); };
   const restart = async (id: string) => { const info = await apiPost<TaskInfo>(`/api/tasks/${id}/restart`, {}); refresh(); setSelected(info.id); };
+  const dismiss = async (id: string) => { await apiPost(`/api/tasks/${id}/remove`, {}); if (selected === id) setSelected(null); refresh(); };
+
+  const selectedTask = running.find(t => t.id === selected);
 
   return (
     <div style={{ height: '100%', display: 'flex' }}>
@@ -65,20 +68,31 @@ export function TasksPanel() {
             <span className="icon">▶</span><span>{t.name}</span>
           </div>
         ))}
-        <div style={{ fontSize: 11, color: 'var(--fg-dim)', textTransform: 'uppercase', padding: '10px 6px 4px' }}>Running</div>
+        <div style={{ fontSize: 11, color: 'var(--fg-dim)', textTransform: 'uppercase', padding: '10px 6px 4px' }}>Tasks</div>
         {running.length === 0 && <div style={{ padding: 6, color: 'var(--fg-dim)', fontSize: 12.5 }}>Nothing running.</div>}
         {running.map(t => (
-          <div key={t.id} className={`tree-item ${selected === t.id ? 'active' : ''}`} onClick={() => setSelected(t.id)}>
-            <span className="icon" style={{ color: t.status === 'running' ? 'var(--accent)' : t.status === 'exited' ? 'var(--fg-dim)' : 'var(--danger)' }}>●</span>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
+          <div key={t.id} className={`tree-item ${selected === t.id ? 'active' : ''}`} onClick={() => setSelected(t.id)} title={`${t.command} ${t.args.join(' ')}${t.status === 'exited' ? ` — exit ${t.exitCode}` : ''}`}>
+            <span className="icon" style={{ color: t.status === 'running' ? 'var(--accent)' : t.exitCode === 0 ? 'var(--fg-dim)' : 'var(--danger)' }}>●</span>
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
+            {t.status !== 'running' && (
+              <span
+                className="close"
+                title="Dismiss"
+                onClick={(e) => { e.stopPropagation(); void dismiss(t.id); }}
+              >×</span>
+            )}
           </div>
         ))}
       </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {selected && (
-          <div style={{ display: 'flex', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
-            <button onClick={() => void stop(selected)}>Stop</button>
-            <button onClick={() => void restart(selected)}>Restart</button>
+        {selectedTask && (
+          <div style={{ display: 'flex', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
+            {selectedTask.status === 'running'
+              ? <button onClick={() => void stop(selectedTask.id)}>Stop</button>
+              : <span style={{ color: selectedTask.exitCode === 0 ? 'var(--fg-dim)' : 'var(--danger)', fontSize: 12 }}>
+                  {selectedTask.status === 'stopped' ? 'Stopped' : `Exited (code ${selectedTask.exitCode})`}
+                </span>}
+            <button onClick={() => void restart(selectedTask.id)}>Restart</button>
           </div>
         )}
         <div className="output-log" ref={logRef} style={{ flex: 1, overflow: 'auto' }}>

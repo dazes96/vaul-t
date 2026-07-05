@@ -1,5 +1,6 @@
 import type { WebSocket } from 'ws';
 import { spawn, type ChildProcess } from 'node:child_process';
+import { killTree } from './util/proc.js';
 
 /**
  * Integrated terminal over WebSocket.
@@ -24,7 +25,10 @@ export async function handleTerminalSocket(ws: WebSocket, cwd: string): Promise<
     pty = p;
   } catch {
     // Fallback: pipe shell. Interactive TUIs won't render, but commands work.
-    child = spawn(shell, process.platform === 'win32' ? [] : ['-i'], { cwd, env: process.env });
+    // Detached (POSIX) so it gets its own process group and killTree() can
+    // reach commands it spawned — otherwise closing the terminal would orphan
+    // a long-running process you started in it.
+    child = spawn(shell, process.platform === 'win32' ? [] : ['-i'], { cwd, env: process.env, detached: process.platform !== 'win32' });
     const fwd = (d: Buffer) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'data', data: d.toString() })); };
     child.stdout?.on('data', fwd);
     child.stderr?.on('data', fwd);
@@ -47,7 +51,7 @@ export async function handleTerminalSocket(ws: WebSocket, cwd: string): Promise<
   });
 
   ws.on('close', () => {
-    pty?.kill();
-    child?.kill();
+    pty?.kill();                    // a real TTY propagates the hangup to its foreground group
+    if (child) killTree(child);      // the pipe fallback needs a tree-kill to avoid orphans
   });
 }

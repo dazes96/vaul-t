@@ -21,8 +21,18 @@ export function getProjectIndex(root: string): Promise<ProjectIndex> {
     const index = new ProjectIndex(root);
     const watcher = new IndexWatcher(index);
     const ready = index.build().then(() => watcher.start());
-    m = { index, watcher, ready };
-    managed.set(root, m);
+    const entry: Managed = { index, watcher, ready };
+    m = entry;
+    managed.set(root, entry);
+    // If the initial build or watcher start fails, evict the entry so the next
+    // request retries from scratch. Without this, a transient error (a file
+    // permission hiccup, a directory removed mid-walk) would cache a rejected
+    // promise forever and permanently break this workspace's index until the
+    // server is restarted.
+    ready.catch(async () => {
+      if (managed.get(root) === entry) managed.delete(root);
+      try { await watcher.close(); } catch { /* nothing to close */ }
+    });
   }
   return m.ready.then(() => m!.index);
 }
