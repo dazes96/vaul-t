@@ -21,7 +21,9 @@ line of it belongs to you.
 | **Self-healing** | After the agent changes files, it automatically typechecks/lints/tests/builds and hands failures back to itself to fix — bounded by a setting you control, never unattended forever |
 | **Cancellation** | Stop actually stops: a running verification step or terminal command is killed within seconds, not left to time out |
 | **Tasks** | Dev servers and watch builds as trackable, stoppable/restartable processes with live logs — distinct from the terminal, never orphaned |
-| **Autocomplete** | Inline AI completions as you type, powered by whatever model you choose |
+| **Inline chat** | Select code, press <kbd>Ctrl+K</kbd>, describe an edit — the change streams as a red→green diff you Accept, Retry, or Reject; applied edits are undoable |
+| **Autocomplete** | Inline AI completions as you type — cancels the instant you keep typing, and completes with in-scope symbols (this file + its imports) as context |
+| **Smart search** | The Search panel's "Smart" mode finds files by natural-language description (ranked across symbols, paths, content, the import graph, and recent edits) and explains why each matched — no filename needed |
 | **Terminal** | Real integrated shell (bottom panel) |
 | **Git** | Status, stage, commit, diff, log, reset — via your system git |
 | **Project intelligence** | Async, incremental, symbol- and import-graph-aware index kept live by a background watcher; automatic framework detection (React, Next.js, Vue, Laravel, WordPress themes & plugins, Tailwind, Docker…); retrieval finds code by what it *does*, not just filename matches |
@@ -68,9 +70,12 @@ Then open http://127.0.0.1:4621 (Vite dev server; the API runs on 4620).
 |---|---|
 | `Ctrl+S` | Save file |
 | `Ctrl+P` | Quick open file / `>` for commands |
+| `Ctrl+K` | Inline edit: edit the selection (or current line) with AI |
 | `Ctrl+L` | Toggle AI panel |
 | `Ctrl+J` | Toggle terminal panel |
+| `Ctrl+Shift+G` | Project graph |
 | `Ctrl+,` | Settings |
+| `Esc` | Close the open overlay (graph / settings / palette / inline edit) |
 
 ## Documentation
 
